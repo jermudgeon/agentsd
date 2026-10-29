@@ -4,6 +4,7 @@ import { transition } from "./state-machine";
 import type { HookEventName, HookPayload, PendingPermission, SessionSnapshot, SessionState } from "./types";
 import { State } from "./types";
 import { extractModel } from "./util/transcript";
+import { configDirFromTranscript } from "./usage/accounts";
 
 /** Prune idle/disconnected sessions with no activity for 1 minute. */
 const STALE_MS = 60 * 1000;
@@ -86,6 +87,15 @@ export class SessionManager extends EventEmitter {
   handleEvent(event: HookEventName, payload: HookPayload): SessionState | undefined {
     const id = payload.session_id;
     if (!id) return undefined;
+
+    const configDir = configDirFromTranscript(payload.transcript_path);
+    if (configDir) {
+      try {
+        this.emit("configDirSeen", configDir);
+      } catch {
+        // A usage-side failure must never affect hook handling.
+      }
+    }
 
     let session = this.sessions.get(id);
 

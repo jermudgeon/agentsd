@@ -81,3 +81,12 @@ export function usageImage(d: KeyDisplay): string {
   const body = text(30, 20, "600", d.label) + text(88, 44, "700", d.big) + text(124, 20, "400", d.sub);
   return iconButton(d.color, d.dimmed ? `<g opacity="0.5">${body}</g>` : `<g>${body}</g>`);
 }
+
+/** Account a key shows: its bound config dir, else the n-th account for the n-th unbound key. */
+export function pickAccount(
+  accounts: AccountView[],
+  configDir: string | undefined,
+  unboundIndex: number,
+): AccountView | undefined {
+  return configDir ? accounts.find((a) => a.configDir === configDir) : accounts[unboundIndex];
+}

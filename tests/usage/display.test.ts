@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Sample } from "../../src/usage/burn";
-import { nextMetric, usageDisplay, usageImage } from "../../src/usage/display";
+import { nextMetric, pickAccount, usageDisplay, usageImage } from "../../src/usage/display";
 import type { AccountView } from "../../src/usage/poller";
 
 const H = 3_600_000;
@@ -109,5 +109,29 @@ describe("usageImage", () => {
 
   it("dims with opacity", () => {
     expect(decode(usageImage({ label: "a", big: "1%", sub: "", color: "#30363d", dimmed: true }))).toContain('opacity="0.5"');
+  });
+});
+
+describe("pickAccount", () => {
+  const a = { ...account(), configDir: "/a" };
+  const b = { ...account(), configDir: "/b" };
+
+  it("returns the account bound by configDir", () => {
+    expect(pickAccount([a, b], "/b", 0)).toBe(b);
+  });
+
+  it("lets two keys bind the same account", () => {
+    expect(pickAccount([a, b], "/a", 0)).toBe(a);
+    expect(pickAccount([a, b], "/a", 1)).toBe(a);
+  });
+
+  it("returns undefined for a bound dir that is not an account", () => {
+    expect(pickAccount([a, b], "/nope", 0)).toBeUndefined();
+  });
+
+  it("gives unbound keys the accounts in order, and nothing past the last", () => {
+    expect(pickAccount([a, b], undefined, 0)).toBe(a);
+    expect(pickAccount([a, b], "", 1)).toBe(b);
+    expect(pickAccount([a, b], undefined, 2)).toBeUndefined();
   });
 });

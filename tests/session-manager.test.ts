@@ -333,3 +333,40 @@ describe("SessionManager event emission", () => {
     expect(changes).toEqual([SESSION_B, SESSION_A]);
   });
 });
+
+describe("configDirSeen", () => {
+  it("emits the config dir taken from transcript_path", () => {
+    const m = new SessionManager();
+    const seen: string[] = [];
+    m.on("configDirSeen", (d: string) => seen.push(d));
+    m.handleEvent("SessionStart", {
+      session_id: SESSION_A,
+      transcript_path: "/Users/x/.claude-idealoft/projects/p/s.jsonl",
+    });
+    expect(seen).toEqual(["/Users/x/.claude-idealoft"]);
+  });
+
+  it("emits nothing without a usable transcript_path", () => {
+    const m = new SessionManager();
+    const seen: string[] = [];
+    m.on("configDirSeen", (d: string) => seen.push(d));
+    m.handleEvent("SessionStart", { session_id: SESSION_A });
+    m.handleEvent("SessionStart", { session_id: SESSION_B, transcript_path: "/tmp/no-marker.jsonl" });
+    expect(seen).toEqual([]);
+  });
+
+  it("still handles the event when a listener throws", () => {
+    const m = new SessionManager();
+    m.on("configDirSeen", () => {
+      throw new Error("listener failure");
+    });
+    let session;
+    expect(() => {
+      session = m.handleEvent("SessionStart", {
+        session_id: SESSION_A,
+        transcript_path: "/Users/x/.claude/projects/p/s.jsonl",
+      });
+    }).not.toThrow();
+    expect(session).toMatchObject({ id: SESSION_A });
+  });
+});
