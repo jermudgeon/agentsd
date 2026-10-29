@@ -57,6 +57,15 @@ describe("usageDisplay: 5-hour and 7-day", () => {
     expect(usageDisplay("a", "fiveHour", account({ fiveResetsIn: -5 * M }), NOW).sub).toBe("0m");
   });
 
+  it("shows 0% with no countdown for an inactive window", () => {
+    const acct = account();
+    acct.reading!.fiveHour = { utilization: 0, resetsAt: null };
+    expect(usageDisplay("a", "fiveHour", acct, NOW)).toEqual({
+      label: "a", big: "0%", sub: "", color: "#30363d", dimmed: false,
+    });
+    expect(usageDisplay("a", "forecast", acct, NOW)).toMatchObject({ big: "OK", sub: "" });
+  });
+
   it("dims and shows the reading age when stale", () => {
     const d = usageDisplay("a", "fiveHour", { ...account(), readAt: NOW - 21 * H }, NOW);
     expect(d.big).toBe("88%");

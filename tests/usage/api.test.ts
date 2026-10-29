@@ -31,6 +31,11 @@ describe("fetchUsage", () => {
     expect(r.sevenDay).toBeNull();
   });
 
+  it("keeps a window with utilization but no reset time (inactive window)", async () => {
+    const { fn } = fakeFetch(200, { five_hour: { utilization: 0.0, resets_at: null }, seven_day: null });
+    expect((await fetchUsage("tok", fn)).fiveHour).toEqual({ utilization: 0, resetsAt: null });
+  });
+
   it("maps a window with null utilization to null", async () => {
     const { fn } = fakeFetch(200, { five_hour: { utilization: null, resets_at: "2026-10-30T00:29:59+00:00" } });
     expect((await fetchUsage("tok", fn)).fiveHour).toBeNull();

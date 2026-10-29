@@ -54,19 +54,23 @@ export function usageDisplay(label: string, metric: Metric, account: AccountView
   const window = metric === "sevenDay" ? reading.sevenDay : reading.fiveHour;
   if (!window) return { ...blank, sub: staleSub ?? "", dimmed: stale };
 
+  const resetsAt = window.resetsAt;
+  const countdown = resetsAt === null ? "" : duration(resetsAt - now);
+
   if (metric === "forecast") {
-    const rate = burnRatePerHour(account.samples, "fiveHour", window.resetsAt - FIVE_HOUR_MS);
-    const f = forecast(window.utilization, rate, now, window.resetsAt);
     const base = { label, dimmed: stale };
+    if (resetsAt === null) return { ...base, big: "OK", sub: staleSub ?? "", color: NEUTRAL };
+    const rate = burnRatePerHour(account.samples, "fiveHour", resetsAt - FIVE_HOUR_MS);
+    const f = forecast(window.utilization, rate, now, resetsAt);
     if (f.kind === "exhaust") return { ...base, big: duration(f.at - now), sub: staleSub ?? "to empty", color: RED };
-    if (f.kind === "ok") return { ...base, big: "OK", sub: staleSub ?? duration(window.resetsAt - now), color: NEUTRAL };
+    if (f.kind === "ok") return { ...base, big: "OK", sub: staleSub ?? countdown, color: NEUTRAL };
     return { ...base, big: "--", sub: staleSub ?? "", color: NEUTRAL };
   }
 
   return {
     label,
     big: `${Math.round(window.utilization)}%`,
-    sub: staleSub ?? duration(window.resetsAt - now),
+    sub: staleSub ?? countdown,
     color: utilizationColor(window.utilization),
     dimmed: stale,
   };

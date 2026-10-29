@@ -3,8 +3,8 @@ export const USAGE_URL = "https://api.anthropic.com/api/oauth/usage";
 export interface UsageWindow {
   /** Percent of the window used. */
   utilization: number;
-  /** Milliseconds since epoch. */
-  resetsAt: number;
+  /** Milliseconds since epoch; null when no window is active (nothing used yet). */
+  resetsAt: number | null;
 }
 
 export interface UsageReading {
@@ -21,7 +21,9 @@ export class UsageHttpError extends Error {
 
 function toWindow(w: unknown): UsageWindow | null {
   const o = w as { utilization?: unknown; resets_at?: unknown } | null;
-  if (typeof o?.utilization !== "number" || typeof o.resets_at !== "string") return null;
+  if (typeof o?.utilization !== "number") return null;
+  if (o.resets_at === null || o.resets_at === undefined) return { utilization: o.utilization, resetsAt: null };
+  if (typeof o.resets_at !== "string") return null;
   const resetsAt = Date.parse(o.resets_at);
   return Number.isNaN(resetsAt) ? null : { utilization: o.utilization, resetsAt };
 }
