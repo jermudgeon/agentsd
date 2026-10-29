@@ -14,3 +14,32 @@ export function iconButton(color: string, iconPath: string): string {
     `${iconPath}</svg>`,
   );
 }
+
+/**
+ * Split a label into at most maxLines lines of maxChars, breaking after - _ / . and at spaces.
+ * A token longer than a line is hard-split; overflow past maxLines ends the last line with an ellipsis.
+ */
+export function wrapLabel(text: string, maxChars: number, maxLines: number): string[] {
+  const lines: string[] = [];
+  let cur = "";
+  for (let tok of text.split(/(?<=[-_/.])|\s+/).filter(Boolean)) {
+    let sep = cur && !/[-_/.]$/.test(cur) ? " " : "";
+    if (cur && cur.length + sep.length + tok.length > maxChars) {
+      lines.push(cur);
+      cur = "";
+      sep = "";
+    }
+    while (cur.length + sep.length + tok.length > maxChars && !cur) {
+      lines.push(tok.slice(0, maxChars));
+      tok = tok.slice(maxChars);
+      if (!tok) break;
+    }
+    cur += sep + tok;
+  }
+  if (cur || lines.length === 0) lines.push(cur);
+  if (lines.length > maxLines) {
+    lines.length = maxLines;
+    lines[maxLines - 1] = lines[maxLines - 1].slice(0, maxChars - 1) + "…";
+  }
+  return lines;
+}

@@ -2,7 +2,7 @@ import { action, type KeyDownEvent } from "@elgato/streamdeck";
 import { basename } from "node:path";
 import { ManagedAction } from "./base";
 import { State } from "../types";
-import { escapeXml, svgDataUri } from "../util/svg";
+import { escapeXml, svgDataUri, wrapLabel } from "../util/svg";
 
 const STATE_COLORS: Record<State, string> = {
   [State.DISCONNECTED]: "#333333",
@@ -25,17 +25,17 @@ export class SessionButton extends ManagedAction {
     const count = this.manager?.sessionCount ?? 0;
     const suffix = count > 1 ? `(${(this.manager?.activeIndex ?? 0) + 1}/${count})` : "";
 
-    let textSvg: string;
+    const lines = wrapLabel(title, 11, 3);
+    const centerY = suffix ? 56 : 72;
+    let textSvg = lines
+      .map((line, i) =>
+        `<text x="72" y="${centerY + (i - (lines.length - 1) / 2) * 24}" text-anchor="middle" dominant-baseline="middle" ` +
+        `font-family="sans-serif" font-size="20" font-weight="bold" fill="white">${escapeXml(line)}</text>`)
+      .join("");
     if (suffix) {
-      textSvg =
-        `<text x="72" y="58" text-anchor="middle" dominant-baseline="middle" ` +
-        `font-family="sans-serif" font-size="22" font-weight="bold" fill="white">${escapeXml(title)}</text>` +
-        `<text x="72" y="86" text-anchor="middle" dominant-baseline="middle" ` +
-        `font-family="sans-serif" font-size="18" fill="white">${escapeXml(suffix)}</text>`;
-    } else {
-      textSvg =
-        `<text x="72" y="72" text-anchor="middle" dominant-baseline="middle" ` +
-        `font-family="sans-serif" font-size="22" font-weight="bold" fill="white">${escapeXml(title)}</text>`;
+      textSvg +=
+        `<text x="72" y="124" text-anchor="middle" dominant-baseline="middle" ` +
+        `font-family="sans-serif" font-size="16" fill="white">${escapeXml(suffix)}</text>`;
     }
 
     const image = svgDataUri(
