@@ -35,6 +35,8 @@ export interface HookPayload {
   permission_mode?: string;
   /** Tool name for PreToolUse/PostToolUse events */
   tool_name?: string;
+  /** Tool arguments for tool and permission events */
+  tool_input?: unknown;
   /** Error message for PostToolUseFailure */
   error?: string;
   /** Notification text */
@@ -49,6 +51,8 @@ export interface PendingPermission {
   req: IncomingMessage;
   res: ServerResponse;
   toolName?: string;
+  /** Arguments of the tool call awaiting permission, used to recognise when that call finishes. */
+  toolInput?: unknown;
   /** Timeout handle — cleared on resolution or cleanup. */
   timer: ReturnType<typeof setTimeout>;
 }
@@ -63,6 +67,8 @@ export interface SessionState {
   lastError: string | null;
   model: string | null;
   pendingPermission: PendingPermission | null;
+  /** Epoch ms when the session started waiting on the user; null when it is not waiting. */
+  waitingSince: number | null;
   /** True after a held permission timed out and the prompt was handed to the terminal. */
   permissionInTerminal: boolean;
   /** PID of the Claude Code process, resolved from hook connection. */

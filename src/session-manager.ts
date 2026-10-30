@@ -11,6 +11,14 @@ const STALE_MS = 60 * 1000;
 const STALE_PRUNE_STATES = new Set([State.IDLE, State.DISCONNECTED]);
 const PRUNE_INTERVAL_MS = 60 * 1000;
 
+function isSameCall(pending: PendingPermission, payload: HookPayload): boolean {
+  return (
+    pending.toolName !== undefined &&
+    pending.toolName === payload.tool_name &&
+    JSON.stringify(pending.toolInput) === JSON.stringify(payload.tool_input)
+  );
+}
+
 /** Events that show a terminal permission prompt was answered. */
 const TERMINAL_ANSWERED = new Set<HookEventName>(["PostToolUse", "PostToolUseFailure", "UserPromptSubmit", "StopFailure"]);
 
@@ -116,6 +124,7 @@ export class SessionManager extends EventEmitter {
         model: payload.model ?? null,
         pendingPermission: null,
         permissionInTerminal: false,
+        waitingSince: null,
         pid: null,
         lastActivity: Date.now(),
       };
@@ -135,6 +144,16 @@ export class SessionManager extends EventEmitter {
 
     session.lastActivity = Date.now();
     if (payload.model) session.model = payload.model;
+
+    // The tool call we are holding a request for has finished, so it was answered elsewhere
+    // (the terminal prompt or Claude Code's own checker): drop the request instead of showing it.
+    if (
+      session.pendingPermission &&
+      (event === "PostToolUse" || event === "PostToolUseFailure") &&
+      isSameCall(session.pendingPermission, payload)
+    ) {
+      this.dropHeldPermission(session);
+    }
 
     // Apply state transition
     const prevState = session.state;
@@ -163,6 +182,7 @@ export class SessionManager extends EventEmitter {
       session.state = nextState;
     }
     if (session.state !== State.AWAITING_PERMISSION) session.permissionInTerminal = false;
+    this.syncWaiting(session);
 
     streamDeck.logger.info(`Event: ${event} session=${id} prev=${prevState} next=${session.state} hasPending=${!!session.pendingPermission} pid=${session.pid}`);
 
@@ -282,6 +302,61 @@ export class SessionManager extends EventEmitter {
     this.advancePermissionQueue();
   }
 
+  /** Every session waiting on the user (held request, prompt in the terminal, or question), oldest first. */
+  get attentionQueue(): SessionState[] {
+    return [...this.sessions.values()]
+      .filter((s) => s.waitingSince !== null)
+      .sort((a, b) => a.waitingSince! - b.waitingSince!);
+  }
+
+  /** The session the deck describes: the oldest waiting one, else the active session. */
+  get foregroundSession(): SessionState | undefined {
+    return this.attentionQueue[0] ?? this.activeSession;
+  }
+
+  /** The oldest waiting session, when the deck can answer it (a held request); otherwise undefined. */
+  get waitingSession(): SessionState | undefined {
+    const head = this.attentionQueue[0];
+    return head?.pendingPermission ? head : undefined;
+  }
+
+  /** Release a held request without a decision; the call was already answered elsewhere. */
+  private dropHeldPermission(session: SessionState): void {
+    const pending = session.pendingPermission;
+    if (!pending) return;
+    streamDeck.logger.info(`Dropping held request for session=${session.id}: its ${pending.toolName} call finished elsewhere`);
+    clearTimeout(pending.timer);
+    try {
+      if (!pending.res.writableEnded) {
+        pending.res.writeHead(200, { "Content-Type": "application/json" });
+        pending.res.end("{}");
+      }
+    } catch {
+      // The hook connection is already gone.
+    }
+    session.pendingPermission = null;
+    session.state = State.PROCESSING;
+    this.removeFromPermissionQueue(session.id);
+    this.syncWaiting(session);
+  }
+
+  private syncWaiting(session: SessionState): void {
+    const waiting = session.state === State.AWAITING_PERMISSION || session.state === State.AWAITING_ELICITATION;
+    if (!waiting) session.waitingSince = null;
+    else if (session.waitingSince === null) session.waitingSince = Date.now();
+  }
+
+  /** Answer the oldest held request. Returns its session id, or null when nothing is held. */
+  resolveOldest(allow: boolean): string | null {
+    const session = this.waitingSession;
+    return session && this.resolvePermission(session.id, allow) ? session.id : null;
+  }
+
+  resolveOldestAlwaysAllow(): string | null {
+    const session = this.waitingSession;
+    return session && this.resolvePermissionAlwaysAllow(session.id) ? session.id : null;
+  }
+
   resolvePermissionAlwaysAllow(sessionId: string): boolean {
     const session = this.sessions.get(sessionId);
     if (!session?.pendingPermission) return false;
@@ -310,6 +385,7 @@ export class SessionManager extends EventEmitter {
 
     session.pendingPermission = null;
     session.state = State.PROCESSING;
+    this.syncWaiting(session);
     this.removeFromPermissionQueue(sessionId);
     this.emit("sessionUpdated", session, "PermissionRequest");
     this.advancePermissionQueue();
@@ -335,6 +411,7 @@ export class SessionManager extends EventEmitter {
     session.pendingPermission = null;
     // Agent continues processing after permission resolution
     session.state = State.PROCESSING;
+    this.syncWaiting(session);
     this.removeFromPermissionQueue(sessionId);
     this.emit("sessionUpdated", session, "PermissionRequest");
     this.advancePermissionQueue();

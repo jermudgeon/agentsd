@@ -43,3 +43,19 @@ export function wrapLabel(text: string, maxChars: number, maxLines: number): str
   }
   return lines;
 }
+
+const KEY_CHARS = 11;
+const MAX_ROWS = 5;
+
+/** A key with centred white text. Each line wraps to the key width; at most five rows are drawn. */
+export function textButton(color: string, lines: string[]): string {
+  const rows = lines.flatMap((l) => wrapLabel(l, KEY_CHARS, 2)).slice(0, MAX_ROWS);
+  const body = rows
+    .map((row, i) =>
+      row === ""
+        ? ""
+        : `<text x="72" y="${72 + (i - (rows.length - 1) / 2) * 24}" text-anchor="middle" dominant-baseline="middle" ` +
+          `font-family="sans-serif" font-size="20" font-weight="bold" fill="white">${escapeXml(row)}</text>`)
+    .join("");
+  return iconButton(color, body);
+}

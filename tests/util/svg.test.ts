@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { escapeXml, svgDataUri, iconButton, wrapLabel } from "../../src/util/svg";
+import { escapeXml, svgDataUri, iconButton, wrapLabel, textButton } from "../../src/util/svg";
 
 describe("svg.escapeXml", () => {
   it("escapes all five XML entities", () => {
@@ -60,5 +60,26 @@ describe("wrapLabel", () => {
 
   it("returns one empty line for an empty name", () => {
     expect(wrapLabel("", 11, 3)).toEqual([""]);
+  });
+});
+
+describe("textButton", () => {
+  const decode = (uri: string) => decodeURIComponent(uri.slice("data:image/svg+xml,".length));
+  const texts = (svg: string) => [...svg.matchAll(/>([^<]*)<\/text>/g)].map((m) => m[1]);
+
+  it("draws each line on a coloured key", () => {
+    const svg = decode(textButton("#1f6feb", ["Permission?", "in terminal"]));
+    expect(texts(svg)).toEqual(["Permission?", "in terminal"]);
+    expect(svg).toContain("#1f6feb");
+  });
+
+  it("wraps a long line so no row is wider than the key", () => {
+    const svg = decode(textButton("#000000", ["Working", "mcp__claude-in-chrome__browser_batch"]));
+    expect(texts(svg).every((t) => t.length <= 11)).toBe(true);
+    expect(texts(svg).length).toBeLessThanOrEqual(5);
+  });
+
+  it("escapes markup in a line", () => {
+    expect(decode(textButton("#000000", ["a<b&c"]))).toContain("a&lt;b&amp;c");
   });
 });

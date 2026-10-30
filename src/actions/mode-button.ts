@@ -23,7 +23,7 @@ function shortenModel(model: string): string {
 @action({ UUID: "com.paultyng.agentsd.mode" })
 export class ModeButton extends ManagedAction {
   protected render(): void {
-    const session = this.manager?.activeSession;
+    const session = this.manager?.foregroundSession;
     const modeLabel = MODE_LABELS[session?.permissionMode ?? ""] ?? session?.permissionMode ?? "—";
     const modelLabel = session?.model ? shortenModel(session.model) : "";
     const title = modelLabel ? `${modeLabel}\n${modelLabel}` : modeLabel;

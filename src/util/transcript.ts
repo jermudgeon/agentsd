@@ -1,5 +1,7 @@
 import { readFile } from "node:fs/promises";
 
+const SYNTHETIC_MODEL = "<synthetic>";
+
 /**
  * Extract the model identifier from a Claude Code transcript JSONL file.
  * Scans from the end to find the most recent assistant message with a model field.
@@ -17,9 +19,9 @@ export async function extractModel(transcriptPath: string): Promise<string | nul
   for (let i = lines.length - 1; i >= 0; i--) {
     try {
       const record = JSON.parse(lines[i]);
-      if (record.type === "assistant" && record.message?.model) {
-        return record.message.model;
-      }
+      const model = record.type === "assistant" ? record.message?.model : null;
+      // Claude Code stamps "<synthetic>" on messages it generates itself (limit notices, errors).
+      if (model && model !== SYNTHETIC_MODEL) return model;
     } catch {
       // skip malformed lines
     }
