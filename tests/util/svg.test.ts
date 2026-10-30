@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { escapeXml, svgDataUri, iconButton } from "../../src/util/svg";
+import { escapeXml, svgDataUri, iconButton, wrapLabel } from "../../src/util/svg";
 
 describe("svg.escapeXml", () => {
   it("escapes all five XML entities", () => {
@@ -34,5 +34,31 @@ describe("svg.iconButton", () => {
     const decoded = decodeURIComponent(uri.slice("data:image/svg+xml,".length));
     expect(decoded).not.toContain("<script>");
     expect(decoded).toContain("&quot;");
+  });
+});
+
+describe("wrapLabel", () => {
+  it("breaks after hyphens", () => {
+    expect(wrapLabel("preseem-airflow-PRS-751", 11, 3)).toEqual(["preseem-", "airflow-", "PRS-751"]);
+  });
+
+  it("leaves a short name on one line", () => {
+    expect(wrapLabel("Code", 11, 3)).toEqual(["Code"]);
+  });
+
+  it("breaks at spaces and drops the space", () => {
+    expect(wrapLabel("my project name", 11, 3)).toEqual(["my project", "name"]);
+  });
+
+  it("hard-splits a token longer than a line", () => {
+    expect(wrapLabel("abcdefghijklmnopqrstuvwxyz", 11, 3)).toEqual(["abcdefghijk", "lmnopqrstuv", "wxyz"]);
+  });
+
+  it("ends the last line with an ellipsis when it runs past maxLines", () => {
+    expect(wrapLabel("a".repeat(40), 11, 3)).toEqual(["aaaaaaaaaaa", "aaaaaaaaaaa", "aaaaaaaaaa…"]);
+  });
+
+  it("returns one empty line for an empty name", () => {
+    expect(wrapLabel("", 11, 3)).toEqual([""]);
   });
 });

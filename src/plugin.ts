@@ -1,4 +1,5 @@
 import streamDeck from "@elgato/streamdeck";
+import { homedir } from "node:os";
 
 import { HookServer } from "./hook-server";
 import { SessionManager } from "./session-manager";
@@ -13,6 +14,11 @@ import { SessionButton } from "./actions/session-button";
 import { SessionDial } from "./actions/session-dial";
 import { StatusButton } from "./actions/status-button";
 import { StopButton } from "./actions/stop-button";
+import { setUsagePoller, UsageButton } from "./actions/usage-button";
+
+import { fetchUsage } from "./usage/api";
+import { readCredential } from "./usage/credentials";
+import { UsagePoller } from "./usage/poller";
 
 // Global error handlers — prevent silent crashes
 process.on("uncaughtException", (err) => {
@@ -24,6 +30,24 @@ process.on("unhandledRejection", (err) => {
 
 const sessionManager = new SessionManager();
 const hookServer = new HookServer(sessionManager);
+
+const usagePoller = new UsagePoller({
+  home: homedir(),
+  now: Date.now,
+  readCredential: (service) => readCredential(service),
+  fetchUsage: (token) => fetchUsage(token),
+  loadAccounts: async () => {
+    const saved = await streamDeck.settings.getGlobalSettings<{ usageAccounts?: string[] }>();
+    return Array.isArray(saved.usageAccounts) ? saved.usageAccounts : [];
+  },
+  saveAccounts: async (dirs) => {
+    const saved = await streamDeck.settings.getGlobalSettings();
+    await streamDeck.settings.setGlobalSettings({ ...saved, usageAccounts: dirs });
+  },
+  log: (message) => streamDeck.logger.info(message),
+});
+sessionManager.on("configDirSeen", (dir: string) => usagePoller.noteConfigDir(dir));
+setUsagePoller(usagePoller);
 
 // Wire manager into all managed actions (single setter replaces per-action setters)
 setManager(sessionManager);
@@ -38,12 +62,16 @@ streamDeck.actions.registerAction(new AlwaysAllowButton());
 streamDeck.actions.registerAction(new DenyButton());
 streamDeck.actions.registerAction(new FocusButton());
 streamDeck.actions.registerAction(new SessionDial());
+streamDeck.actions.registerAction(new UsageButton());
 
 streamDeck.logger.setLevel("info");
 
 // Start hook server
 hookServer.start().then(() => {
   streamDeck.logger.info("Hook server listening on :9200");
+  usagePoller.start().catch((err) => {
+    streamDeck.logger.error(`Usage poller failed to start: ${err}`);
+  });
 }).catch((err) => {
   streamDeck.logger.error(`Failed to start hook server: ${err}`);
 });
@@ -54,6 +82,7 @@ sessionManager.start();
 async function shutdown(): Promise<void> {
   streamDeck.logger.info("Shutting down...");
   sessionManager.stop();
+  usagePoller.stop();
   await hookServer.stop();
 }
 

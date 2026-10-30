@@ -4,11 +4,15 @@ import { transition } from "./state-machine";
 import type { HookEventName, HookPayload, PendingPermission, SessionSnapshot, SessionState } from "./types";
 import { State } from "./types";
 import { extractModel } from "./util/transcript";
+import { configDirFromTranscript } from "./usage/accounts";
 
 /** Prune idle/disconnected sessions with no activity for 1 minute. */
 const STALE_MS = 60 * 1000;
 const STALE_PRUNE_STATES = new Set([State.IDLE, State.DISCONNECTED]);
 const PRUNE_INTERVAL_MS = 60 * 1000;
+
+/** Events that show a terminal permission prompt was answered. */
+const TERMINAL_ANSWERED = new Set<HookEventName>(["PostToolUse", "PostToolUseFailure", "UserPromptSubmit", "StopFailure"]);
 
 export class SessionManager extends EventEmitter {
   private readonly sessions = new Map<string, SessionState>();
@@ -87,6 +91,15 @@ export class SessionManager extends EventEmitter {
     const id = payload.session_id;
     if (!id) return undefined;
 
+    const configDir = configDirFromTranscript(payload.transcript_path);
+    if (configDir) {
+      try {
+        this.emit("configDirSeen", configDir);
+      } catch {
+        // A usage-side failure must never affect hook handling.
+      }
+    }
+
     let session = this.sessions.get(id);
 
     if (!session) {
@@ -102,6 +115,7 @@ export class SessionManager extends EventEmitter {
         lastError: null,
         model: payload.model ?? null,
         pendingPermission: null,
+        permissionInTerminal: false,
         pid: null,
         lastActivity: Date.now(),
       };
@@ -129,17 +143,17 @@ export class SessionManager extends EventEmitter {
     // Guard: suppress transitions away from AWAITING_PERMISSION when a plugin-held
     // permission is pending. Parallel tool events (PreToolUse, PostToolUse, etc.)
     // must not kick the session out of AWAITING_PERMISSION and auto-deny.
-    if (
-      session.pendingPermission &&
+    const leavingWait =
       prevState === State.AWAITING_PERMISSION &&
       nextState !== null &&
       nextState !== State.AWAITING_PERMISSION &&
       event !== "PermissionRequest" &&
       event !== "Stop" &&
-      event !== "SessionEnd"
-    ) {
-      nextState = null;
-    }
+      event !== "SessionEnd";
+    if (leavingWait && session.pendingPermission) nextState = null;
+    // While the prompt is open in the terminal, only an event that shows it was answered
+    // there may end the wait; a parallel PreToolUse must not.
+    if (leavingWait && session.permissionInTerminal && !TERMINAL_ANSWERED.has(event)) nextState = null;
 
     if (nextState !== null) {
       // Clear error indicator when leaving IDLE
@@ -148,6 +162,7 @@ export class SessionManager extends EventEmitter {
       }
       session.state = nextState;
     }
+    if (session.state !== State.AWAITING_PERMISSION) session.permissionInTerminal = false;
 
     streamDeck.logger.info(`Event: ${event} session=${id} prev=${prevState} next=${session.state} hasPending=${!!session.pendingPermission} pid=${session.pid}`);
 
@@ -238,6 +253,7 @@ export class SessionManager extends EventEmitter {
     const session = this.sessions.get(sessionId);
     if (!session) return;
     this.clearPendingPermission(session);
+    session.permissionInTerminal = false;
     session.pendingPermission = pending;
     if (!this.permissionQueue.includes(sessionId)) {
       this.permissionQueue.push(sessionId);
@@ -258,7 +274,9 @@ export class SessionManager extends EventEmitter {
     if (!session?.pendingPermission) return;
     clearTimeout(session.pendingPermission.timer);
     session.pendingPermission = null;
-    session.state = State.PROCESSING;
+    // The server answered with no decision, so Claude Code shows its own prompt: the
+    // session keeps waiting until an event shows it was answered there.
+    session.permissionInTerminal = true;
     this.removeFromPermissionQueue(sessionId);
     this.emit("sessionUpdated", session, "PermissionRequest");
     this.advancePermissionQueue();

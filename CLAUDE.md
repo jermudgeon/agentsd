@@ -32,5 +32,5 @@ PostToolUse intentionally stays in PROCESSING — Stop moves to IDLE.
 
 - **Auto-foreground**: Elicitation and PermissionRequest events bring the session to the active slot.
 - **Stale pruning**: Sessions with no activity for 60s are pruned (PRUNE_INTERVAL_MS = 60s check).
-- **Permission timeout**: 120s (PERMISSION_TIMEOUT_MS). Sends explicit deny on timeout.
+- **Permission timeout**: 100s (PERMISSION_TIMEOUT_MS). On timeout the hook is answered with `{}` so Claude Code shows its own prompt; the session stays AWAITING_PERMISSION (`permissionInTerminal`) until an event shows it was answered.
 - **Action DI pattern**: A single `setManager()` call in `plugin.ts` wires the `SessionManager` into all `ManagedAction` subclasses via a shared module-level reference in `actions/base.ts`.

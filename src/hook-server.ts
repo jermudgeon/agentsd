@@ -13,15 +13,18 @@ const VALID_EVENTS = new Set<HookEventName>([
   "Elicitation", "ElicitationResult",
 ]);
 
-/** Default time to hold a PermissionRequest response open before auto-denying. */
-const PERMISSION_TIMEOUT_MS = 120_000;
+/**
+ * Default time to hold a PermissionRequest response open before handing the prompt back to
+ * the terminal. Shorter than the 120s hook timeout hooks:install sets, so the plugin answers first.
+ */
+const PERMISSION_TIMEOUT_MS = 100_000;
 /** Maximum request body size (1 MB). */
 const MAX_BODY_BYTES = 1_024 * 1_024;
 
 export interface HookServerOptions {
   /** Expose GET /debug/sessions returning serialized session state. Defaults to env AGENTSD_DEBUG="1". */
   debugEnabled?: boolean;
-  /** PermissionRequest hold-open timeout in ms. Defaults to 120s. */
+  /** PermissionRequest hold-open timeout in ms. Defaults to 100s. */
   permissionTimeoutMs?: number;
 }
 
@@ -133,12 +136,11 @@ export class HookServer {
       streamDeck.logger.info(`PermissionRequest: holding response for session=${payload.session_id} tool=${payload.tool_name ?? "unknown"}`);
       this.sessionManager.handleEvent(validEvent, payload);
       const timer = setTimeout(() => {
-        streamDeck.logger.info(`PermissionRequest: timed out for session=${payload.session_id}`);
-        // Send explicit deny on timeout instead of ambiguous {}
+        streamDeck.logger.info(`PermissionRequest: timed out for session=${payload.session_id}, handing the prompt to the terminal`);
+        // No decision: Claude Code shows its own prompt instead of the deck denying on the user's behalf.
         if (!res.writableEnded) {
-          const body = { hookSpecificOutput: { hookEventName: "PermissionRequest", decision: { behavior: "deny", message: "Timed out" } } };
           res.writeHead(200, { "Content-Type": "application/json" });
-          res.end(JSON.stringify(body));
+          res.end("{}");
         }
         // Clear pending state without trying to write the response again
         this.sessionManager.clearPendingPermissionById(payload.session_id);
