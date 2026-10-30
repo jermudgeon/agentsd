@@ -1,123 +1,119 @@
 import { describe, expect, it } from "vitest";
 import type { Sample } from "../../src/usage/burn";
-import { nextMetric, pickAccount, usageDisplay, usageImage } from "../../src/usage/display";
+import { autoSlot, pickAccount, usageDisplay, usageImage } from "../../src/usage/display";
 import type { AccountView } from "../../src/usage/poller";
 
 const H = 3_600_000;
 const M = 60_000;
-const NOW = 100 * H;
+const NOW = Date.UTC(2026, 9, 30, 12, 0, 0);
+const TZ = "UTC";
+const NEUTRAL = "#30363d";
+const AMBER = "#d29922";
+const RED = "#da3633";
 
-function account(over: Partial<AccountView> & { five?: number | null; fiveResetsIn?: number; sevenResetsIn?: number } = {}): AccountView {
-  const five = over.five === undefined ? 88 : over.five;
+interface Over {
+  five?: number | null;
+  fiveResetsAt?: number | null;
+  seven?: number;
+  sevenResetsAt?: number;
+  samples?: Sample[];
+  readAt?: number | null;
+  label?: string;
+  configDir?: string;
+}
+
+function account(o: Over = {}): AccountView {
   return {
-    configDir: "/Users/x/.claude",
-    label: "default",
+    configDir: o.configDir ?? "/Users/x/.claude",
+    label: o.label ?? "default",
     reading: {
-      fiveHour: five === null ? null : { utilization: five, resetsAt: NOW + (over.fiveResetsIn ?? 2 * H + 20 * M) },
-      sevenDay: { utilization: 66, resetsAt: NOW + (over.sevenResetsIn ?? 5 * 24 * H + 7 * H) },
+      fiveHour: o.five === null ? null : { utilization: o.five ?? 60, resetsAt: o.fiveResetsAt === undefined ? NOW + 3 * H : o.fiveResetsAt },
+      sevenDay: { utilization: o.seven ?? 48, resetsAt: o.sevenResetsAt ?? NOW + 5 * 24 * H },
     },
-    readAt: NOW,
-    samples: [],
-    ...over,
+    readAt: o.readAt === undefined ? NOW : o.readAt,
+    samples: o.samples ?? [],
   };
 }
 
-describe("usageDisplay: 5-hour and 7-day", () => {
-  it("shows percent, countdown and amber for 88%", () => {
-    expect(usageDisplay("work", "fiveHour", account(), NOW)).toEqual({
-      label: "work", big: "88%", sub: "2h 20m", color: "#d29922", dimmed: false,
+const five = (a: AccountView | undefined) => usageDisplay("default", "fiveHour", a, NOW, TZ);
+const seven = (a: AccountView | undefined) => usageDisplay("default", "sevenDay", a, NOW, TZ);
+
+describe("usageDisplay: 5-hour", () => {
+  it("shows the end time and the projected empty time, red when it runs out first", () => {
+    expect(five(account())).toEqual({
+      label: "default 5h", big: "60%", ends: "ends 3:00p", empty: "empty 1:20p", color: RED, dimmed: false,
     });
   });
 
-  it.each([[69, "#30363d"], [70, "#d29922"], [89, "#d29922"], [90, "#da3633"]])(
-    "colours %i%% as %s",
-    (pct, color) => {
-      expect(usageDisplay("a", "fiveHour", account({ five: pct }), NOW).color).toBe(color);
-    },
-  );
-
-  it("shows the 7-day window with a day countdown", () => {
-    const d = usageDisplay("a", "sevenDay", account(), NOW);
-    expect(d.big).toBe("66%");
-    expect(d.sub).toBe("5d 7h");
+  it("says lasts when the reset comes first, and stays neutral", () => {
+    expect(five(account({ five: 30 }))).toMatchObject({ big: "30%", empty: "lasts", color: NEUTRAL });
   });
 
+  it("damps the projection with the recent rate", () => {
+    const samples: Sample[] = [
+      { t: NOW - 30 * M, fiveHour: 50, sevenDay: null },
+      { t: NOW, fiveHour: 60, sevenDay: null },
+    ];
+    expect(five(account({ samples })).empty).toBe("empty 1:36p");
+  });
+
+  it.each([[69, NEUTRAL], [70, AMBER], [89, AMBER], [90, RED]])("colours %i%% as %s when the reset is imminent", (pct, color) => {
+    expect(five(account({ five: pct, fiveResetsAt: NOW + 10 * M })).color).toBe(color);
+  });
+
+  it("shows -- for the projection in the first minutes of a window", () => {
+    expect(five(account({ five: 5, fiveResetsAt: NOW + 5 * H - 3 * M })).empty).toBe("empty --");
+  });
+
+  it("shows an inactive window as 0% with no projection", () => {
+    expect(five(account({ five: 0, fiveResetsAt: null }))).toMatchObject({ big: "0%", ends: "inactive", empty: "", color: NEUTRAL });
+  });
+
+  it("shows resetting when the reset time has passed", () => {
+    expect(five(account({ fiveResetsAt: NOW - 5 * M }))).toMatchObject({ ends: "resetting", empty: "" });
+  });
+});
+
+describe("usageDisplay: 7-day", () => {
+  it("shows the weekday for a reset and projection on another day", () => {
+    expect(seven(account())).toEqual({
+      label: "default 7d", big: "48%", ends: "ends Wed 12:00p", empty: "empty Sun 4:00p", color: RED, dimmed: false,
+    });
+  });
+});
+
+describe("usageDisplay: no data", () => {
   it("shows -- with no account or no reading", () => {
-    expect(usageDisplay("a", "fiveHour", undefined, NOW).big).toBe("--");
-    expect(usageDisplay("a", "fiveHour", { ...account(), reading: null, readAt: null }, NOW).big).toBe("--");
+    expect(five(undefined)).toMatchObject({ big: "--", ends: "", empty: "" });
+    expect(five({ ...account(), reading: null, readAt: null })).toMatchObject({ big: "--", ends: "", empty: "" });
   });
 
   it("shows -- for a null window, never NaN", () => {
-    const d = usageDisplay("a", "fiveHour", account({ five: null }), NOW);
+    const d = five(account({ five: null }));
     expect(d.big).toBe("--");
     expect(JSON.stringify(d)).not.toContain("NaN");
   });
+});
 
-  it("shows 0m when resetsAt is in the past", () => {
-    expect(usageDisplay("a", "fiveHour", account({ fiveResetsIn: -5 * M }), NOW).sub).toBe("0m");
-  });
-
-  it("shows 0% with no countdown for an inactive window", () => {
-    const acct = account();
-    acct.reading!.fiveHour = { utilization: 0, resetsAt: null };
-    expect(usageDisplay("a", "fiveHour", acct, NOW)).toEqual({
-      label: "a", big: "0%", sub: "", color: "#30363d", dimmed: false,
-    });
-    expect(usageDisplay("a", "forecast", acct, NOW)).toMatchObject({ big: "OK", sub: "" });
-  });
-
-  it("dims and shows the reading age when stale", () => {
-    const d = usageDisplay("a", "fiveHour", { ...account(), readAt: NOW - 21 * H }, NOW);
-    expect(d.big).toBe("88%");
-    expect(d.sub).toBe("stale 21h");
-    expect(d.dimmed).toBe(true);
+describe("usageDisplay: stale", () => {
+  it("dims and shows the reading age in place of the end and projection", () => {
+    expect(five(account({ readAt: NOW - 21 * H }))).toMatchObject({ big: "60%", ends: "stale 21h", empty: "", dimmed: true });
   });
 
   it("is not stale within 12 minutes", () => {
-    expect(usageDisplay("a", "fiveHour", { ...account(), readAt: NOW - 12 * M }, NOW).dimmed).toBe(false);
-    expect(usageDisplay("a", "fiveHour", { ...account(), readAt: NOW - 12 * M - 1 }, NOW).dimmed).toBe(true);
+    expect(five(account({ readAt: NOW - 12 * M })).dimmed).toBe(false);
+    expect(five(account({ readAt: NOW - 12 * M - 1 })).dimmed).toBe(true);
   });
 });
 
-describe("usageDisplay: forecast", () => {
-  const rising: Sample[] = [{ t: NOW - 30 * M, fiveHour: 50, sevenDay: null }, { t: NOW, fiveHour: 60, sevenDay: null }];
-
-  it("shows time to exhaustion in red when it comes before the reset", () => {
-    const d = usageDisplay("a", "forecast", account({ five: 60, fiveResetsIn: 4 * H, samples: rising }), NOW);
-    expect(d).toMatchObject({ big: "2h 0m", sub: "to empty", color: "#da3633" });
-  });
-
-  it("shows OK when the reset comes first", () => {
-    const d = usageDisplay("a", "forecast", account({ five: 60, fiveResetsIn: H, samples: rising }), NOW);
-    expect(d).toMatchObject({ big: "OK", color: "#30363d" });
-  });
-
-  it("shows -- when there is too little data", () => {
-    expect(usageDisplay("a", "forecast", account({ five: 60 }), NOW).big).toBe("--");
-  });
-});
-
-describe("nextMetric", () => {
-  it("cycles and wraps", () => {
-    expect(nextMetric("fiveHour")).toBe("sevenDay");
-    expect(nextMetric("sevenDay")).toBe("forecast");
-    expect(nextMetric("forecast")).toBe("fiveHour");
-  });
-});
-
-describe("usageImage", () => {
-  const decode = (uri: string) => decodeURIComponent(uri.slice("data:image/svg+xml,".length));
-
-  it("renders an escaped SVG data URI containing the label and value", () => {
-    const svg = decode(usageImage({ label: "a&b", big: "88%", sub: "2h", color: "#d29922", dimmed: false }));
-    expect(svg).toContain("a&amp;b");
-    expect(svg).toContain("88%");
-    expect(svg).toContain("#d29922");
-    expect(svg).not.toContain('opacity="0.5"');
-  });
-
-  it("dims with opacity", () => {
-    expect(decode(usageImage({ label: "a", big: "1%", sub: "", color: "#30363d", dimmed: true }))).toContain('opacity="0.5"');
+describe("autoSlot", () => {
+  it("fills default 5h, default 7d, second 5h, second 7d", () => {
+    expect([0, 1, 2, 3].map(autoSlot)).toEqual([
+      { accountIndex: 0, window: "fiveHour" },
+      { accountIndex: 0, window: "sevenDay" },
+      { accountIndex: 1, window: "fiveHour" },
+      { accountIndex: 1, window: "sevenDay" },
+    ]);
   });
 });
 
@@ -149,5 +145,20 @@ describe("pickAccount", () => {
     expect(pickAccount([a, b], undefined, 0)).toBe(a);
     expect(pickAccount([a, b], "", 1)).toBe(b);
     expect(pickAccount([a, b], undefined, 2)).toBeUndefined();
+  });
+});
+
+describe("usageImage", () => {
+  const decode = (uri: string) => decodeURIComponent(uri.slice("data:image/svg+xml,".length));
+  const d = { label: "a&b 5h", big: "88%", ends: "ends 3:00p", empty: "empty 1:20p", color: RED, dimmed: false };
+
+  it("renders an escaped SVG data URI with every line", () => {
+    const svg = decode(usageImage(d));
+    for (const part of ["a&amp;b 5h", "88%", "ends 3:00p", "empty 1:20p", RED]) expect(svg).toContain(part);
+    expect(svg).not.toContain('opacity="0.5"');
+  });
+
+  it("dims with opacity", () => {
+    expect(decode(usageImage({ ...d, dimmed: true }))).toContain('opacity="0.5"');
   });
 });

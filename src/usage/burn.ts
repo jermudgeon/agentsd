@@ -40,3 +40,23 @@ export function forecast(utilization: number, ratePerHour: number | null, now: n
   const at = now + ((100 - utilization) / ratePerHour) * HOUR_MS;
   return at > resetsAt ? { kind: "ok" } : { kind: "exhaust", at };
 }
+
+const MIN_WINDOW_AGE_H = 0.1;
+
+/**
+ * Burn rate in percent per hour, damped: the mean of the recent rate (last hour of samples)
+ * and the average since the window opened. Null until the window is 6 minutes old.
+ */
+export function dampedBurnRate(args: {
+  samples: Sample[];
+  key: "fiveHour" | "sevenDay";
+  utilization: number;
+  windowStart: number;
+  now: number;
+}): number | null {
+  const elapsedHours = (args.now - args.windowStart) / HOUR_MS;
+  if (elapsedHours < MIN_WINDOW_AGE_H) return null;
+  const average = args.utilization / elapsedHours;
+  const recent = burnRatePerHour(args.samples, args.key, Math.max(args.windowStart, args.now - HOUR_MS));
+  return recent === null ? average : (Math.max(recent, 0) + average) / 2;
+}

@@ -5,7 +5,7 @@
       "UUID": "com.paultyng.agentsd.usage",
       "Name": "Usage",
       "Icon": "imgs/session",
-      "Tooltip": "Plan usage for a Claude account. Press to cycle 5-hour, 7-day, forecast.",
+      "Tooltip": "5-hour or 7-day plan usage for a Claude account: when it ends and when it is predicted to run out.",
       "Controllers": ["Keypad"],
       "PropertyInspectorPath": "ui/usage.html",
       "States": [{ "Image": "imgs/session", "ShowTitle": false }]

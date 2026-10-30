@@ -1,10 +1,10 @@
-import { action, SingletonAction, type KeyDownEvent, type WillAppearEvent, type WillDisappearEvent, type DidReceiveSettingsEvent } from "@elgato/streamdeck";
 import { homedir } from "node:os";
+import { action, SingletonAction, type DidReceiveSettingsEvent, type WillAppearEvent, type WillDisappearEvent } from "@elgato/streamdeck";
+import { autoSlot, pickAccount, usageDisplay, usageImage, type WindowKey } from "../usage/display";
 import { KeyOrder } from "../usage/key-order";
-import { nextMetric, pickAccount, usageDisplay, usageImage, type Metric } from "../usage/display";
 import type { UsagePoller } from "../usage/poller";
 
-type UsageSettings = { configDir?: string; label?: string };
+type UsageSettings = { configDir?: string; label?: string; window?: WindowKey };
 
 const REFRESH_MS = 30_000;
 
@@ -18,7 +18,6 @@ export function setUsagePoller(p: UsagePoller): void {
 export class UsageButton extends SingletonAction<UsageSettings> {
   private readonly order = new KeyOrder();
   private readonly settings = new Map<string, UsageSettings>();
-  private readonly metrics = new Map<string, Metric>();
   private timer: ReturnType<typeof setInterval> | null = null;
   private bound = false;
 
@@ -36,7 +35,6 @@ export class UsageButton extends SingletonAction<UsageSettings> {
   override onWillDisappear(ev: WillDisappearEvent<UsageSettings>): void {
     this.order.remove(ev.action.id);
     this.settings.delete(ev.action.id);
-    this.metrics.delete(ev.action.id);
     if (this.order.isEmpty() && this.timer) {
       clearInterval(this.timer);
       this.timer = null;
@@ -48,11 +46,6 @@ export class UsageButton extends SingletonAction<UsageSettings> {
     this.render();
   }
 
-  override onKeyDown(ev: KeyDownEvent<UsageSettings>): void {
-    this.metrics.set(ev.action.id, nextMetric(this.metrics.get(ev.action.id) ?? "fiveHour"));
-    this.render();
-  }
-
   private render(): void {
     const accounts = _poller?.accounts() ?? [];
     const unbound = this.order.ids().filter((id) => !this.settings.get(id)?.configDir);
@@ -60,9 +53,10 @@ export class UsageButton extends SingletonAction<UsageSettings> {
     for (const act of this.actions) {
       if (!act.isKey()) continue;
       const s = this.settings.get(act.id) ?? {};
-      const account = pickAccount(accounts, s.configDir, unbound.indexOf(act.id), homedir());
-      const label = s.label || account?.label || "usage";
-      const d = usageDisplay(label, this.metrics.get(act.id) ?? "fiveHour", account, now);
+      const slot = autoSlot(unbound.indexOf(act.id));
+      const account = pickAccount(accounts, s.configDir, slot.accountIndex, homedir());
+      const window = s.window ?? (s.configDir ? "fiveHour" : slot.window);
+      const d = usageDisplay(s.label || account?.label || "usage", window, account, now);
       void act.setImage(usageImage(d));
     }
   }

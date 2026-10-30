@@ -28,20 +28,24 @@ The Stream Deck shows, for each locally logged-in Claude account (at most two), 
 
 ## Burn rate
 
-- Burn rate for a window is the slope of utilization over the retained samples inside the current window, in percent per hour. It is undefined with fewer than two samples or when the window has reset since the first sample.
-- Projected exhaustion time is `now + (100 − utilization) / burn rate`. The forecast reads `OK` when exhaustion would fall after `resets_at` or the burn rate is zero or negative, shows time until exhaustion otherwise, and reads `--` when the burn rate is undefined.
+- The window average rate is `utilization / hours since the window opened`, where the window opened at `resets_at` minus the window length (5 hours or 7 days). It is undefined until 6 minutes after the window opened.
+- The recent rate is the slope of utilization over the retained samples from the last hour inside the window, in percent per hour. It is undefined with fewer than two such samples, and a negative slope counts as zero.
+- The damped burn rate is the mean of the recent rate and the window average rate, or the window average rate alone when the recent rate is undefined. It is undefined when the window average rate is.
+- Projected exhaustion time is `now + (100 − utilization) / damped burn rate`. The projection is `lasts` when exhaustion would fall after `resets_at` or the burn rate is zero, and `--` when the burn rate is undefined.
 
 ## Usage key
 
-- Each Usage key shows the account label, one metric as a large percentage, and a one-line subtitle. A press cycles the metric: 5-hour used, 7-day used, burn forecast. Each key holds its own metric, which resets to 5-hour used on restart.
-- 5-hour and 7-day views show the countdown to `resets_at` as the subtitle. The forecast view shows `OK` or the time to exhaustion.
-- The key's background colour follows the displayed utilization: below 70% neutral, 70% to 89% amber, 90% and above red. In the forecast view red means exhaustion is projected before reset.
-- When the last good reading is older than 12 minutes (a poll failed, the credential is expired, or the endpoint is rate-limiting), the key shows the last known values dimmed with the age of that reading (`stale 21h`). With no reading yet it shows `--`.
+- Each Usage key shows one window of one account: the account label with `5h` or `7d`, the utilization as a large percentage, a line `ends <time>`, and a line `empty <time>` or `lasts`.
+- Times are in the local time zone: `3:00p` when the day is today, `Wed 12:00p` otherwise. `empty <time>` is the projected exhaustion time.
+- A window with no reset time (nothing used yet) shows its percentage with `inactive` and no projection. A window whose reset time has passed shows `resetting` and no projection.
+- The key's background colour is red when utilization is 90% or above or exhaustion is projected before the reset, amber from 70% to 89%, and neutral otherwise.
+- Each key's window comes from its settings (`fiveHour` or `sevenDay`); an unset key takes the next slot in the order default account 5-hour, default account 7-day, second account 5-hour, second account 7-day.
+- When the last good reading is older than 12 minutes (a poll failed, the credential is expired, or the endpoint is rate-limiting), the key shows the last known percentage dimmed with the age of that reading (`stale 21h`) in place of the end and projection lines. With no reading yet it shows `--`.
 - The key shows only what the API returned; it never estimates utilization from transcripts.
 
 ## Placement
 
-- The plugin provides a `Usage` action in its Claude Code category. The user's own Coding profile on the 5x3 deck holds two Usage keys at (0,1) and (0,2); the plugin ships no profile.
+- The plugin provides a `Usage` action in its Claude Code category. The user's own Coding profile on the 5x3 deck holds four Usage keys: default account 5-hour at (0,1) and 7-day at (1,1), second account 5-hour at (0,2) and 7-day at (1,2); the plugin ships no profile.
 
 ## Invariants
 

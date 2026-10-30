@@ -1,13 +1,14 @@
-import { burnRatePerHour, forecast } from "./burn";
+import { dampedBurnRate, forecast } from "./burn";
 import type { AccountView } from "./poller";
 import { escapeXml, iconButton } from "../util/svg";
 
-export type Metric = "fiveHour" | "sevenDay" | "forecast";
+export type WindowKey = "fiveHour" | "sevenDay";
 
 export interface KeyDisplay {
   label: string;
   big: string;
-  sub: string;
+  ends: string;
+  empty: string;
   color: string;
   dimmed: boolean;
 }
@@ -16,21 +17,25 @@ const NEUTRAL = "#30363d";
 const AMBER = "#d29922";
 const RED = "#da3633";
 const STALE_AFTER_MS = 12 * 60_000;
-const FIVE_HOUR_MS = 5 * 3_600_000;
-const ORDER: Metric[] = ["fiveHour", "sevenDay", "forecast"];
+const HOUR_MS = 3_600_000;
+const WINDOW_MS: Record<WindowKey, number> = { fiveHour: 5 * HOUR_MS, sevenDay: 7 * 24 * HOUR_MS };
+const WINDOW_TAG: Record<WindowKey, string> = { fiveHour: "5h", sevenDay: "7d" };
 
-export function nextMetric(m: Metric): Metric {
-  return ORDER[(ORDER.indexOf(m) + 1) % ORDER.length];
+/** Default account and window for the n-th unbound key: default 5h, default 7d, second 5h, second 7d. */
+export function autoSlot(unboundIndex: number): { accountIndex: number; window: WindowKey } {
+  return { accountIndex: Math.floor(unboundIndex / 2), window: unboundIndex % 2 === 0 ? "fiveHour" : "sevenDay" };
 }
 
-function duration(ms: number): string {
-  const mins = Math.floor(Math.max(0, ms) / 60_000);
-  const d = Math.floor(mins / 1440);
-  const h = Math.floor((mins % 1440) / 60);
-  const m = mins % 60;
-  if (d > 0) return `${d}d ${h}h`;
-  if (h > 0) return `${h}h ${m}m`;
-  return `${m}m`;
+function clock(ms: number, now: number, tz?: string): string {
+  const day = (t: number) =>
+    new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(t);
+  const time = new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "numeric", minute: "2-digit", hour12: true })
+    .format(ms)
+    .replace(/\s?AM$/, "a")
+    .replace(/\s?PM$/, "p");
+  if (day(ms) === day(now)) return time;
+  const weekday = new Intl.DateTimeFormat("en-US", { timeZone: tz, weekday: "short" }).format(ms);
+  return `${weekday} ${time}`;
 }
 
 function age(ms: number): string {
@@ -44,35 +49,43 @@ function utilizationColor(pct: number): string {
   return pct >= 90 ? RED : pct >= 70 ? AMBER : NEUTRAL;
 }
 
-export function usageDisplay(label: string, metric: Metric, account: AccountView | undefined, now: number): KeyDisplay {
-  const blank: KeyDisplay = { label, big: "--", sub: "", color: NEUTRAL, dimmed: false };
+export function usageDisplay(
+  label: string,
+  key: WindowKey,
+  account: AccountView | undefined,
+  now: number,
+  tz?: string,
+): KeyDisplay {
+  const tagged = `${label} ${WINDOW_TAG[key]}`;
+  const blank: KeyDisplay = { label: tagged, big: "--", ends: "", empty: "", color: NEUTRAL, dimmed: false };
   const reading = account?.reading;
   if (!account || !reading || account.readAt === null) return blank;
 
   const stale = now - account.readAt > STALE_AFTER_MS;
-  const staleSub = stale ? `stale ${age(now - account.readAt)}` : null;
-  const window = metric === "sevenDay" ? reading.sevenDay : reading.fiveHour;
-  if (!window) return { ...blank, sub: staleSub ?? "", dimmed: stale };
+  const staleText = `stale ${age(now - account.readAt)}`;
+  const win = reading[key];
+  if (!win) return { ...blank, ends: stale ? staleText : "", dimmed: stale };
 
-  const resetsAt = window.resetsAt;
-  const countdown = resetsAt === null ? "" : duration(resetsAt - now);
+  const base = { label: tagged, big: `${Math.round(win.utilization)}%`, empty: "" };
+  const color = utilizationColor(win.utilization);
+  if (stale) return { ...base, ends: staleText, color, dimmed: true };
+  if (win.resetsAt === null) return { ...base, ends: "inactive", color, dimmed: false };
+  if (win.resetsAt <= now) return { ...base, ends: "resetting", color, dimmed: false };
 
-  if (metric === "forecast") {
-    const base = { label, dimmed: stale };
-    if (resetsAt === null) return { ...base, big: "OK", sub: staleSub ?? "", color: NEUTRAL };
-    const rate = burnRatePerHour(account.samples, "fiveHour", resetsAt - FIVE_HOUR_MS);
-    const f = forecast(window.utilization, rate, now, resetsAt);
-    if (f.kind === "exhaust") return { ...base, big: duration(f.at - now), sub: staleSub ?? "to empty", color: RED };
-    if (f.kind === "ok") return { ...base, big: "OK", sub: staleSub ?? countdown, color: NEUTRAL };
-    return { ...base, big: "--", sub: staleSub ?? "", color: NEUTRAL };
-  }
-
+  const rate = dampedBurnRate({
+    samples: account.samples,
+    key,
+    utilization: win.utilization,
+    windowStart: win.resetsAt - WINDOW_MS[key],
+    now,
+  });
+  const f = forecast(win.utilization, rate, now, win.resetsAt);
   return {
-    label,
-    big: `${Math.round(window.utilization)}%`,
-    sub: staleSub ?? countdown,
-    color: utilizationColor(window.utilization),
-    dimmed: stale,
+    ...base,
+    ends: `ends ${clock(win.resetsAt, now, tz)}`,
+    empty: f.kind === "exhaust" ? `empty ${clock(f.at, now, tz)}` : f.kind === "ok" ? "lasts" : "empty --",
+    color: f.kind === "exhaust" ? RED : color,
+    dimmed: false,
   };
 }
 
@@ -82,11 +95,11 @@ function text(y: number, size: number, weight: string, content: string): string 
 }
 
 export function usageImage(d: KeyDisplay): string {
-  const body = text(30, 20, "600", d.label) + text(88, 44, "700", d.big) + text(124, 20, "400", d.sub);
+  const body = text(24, 17, "600", d.label) + text(68, 40, "700", d.big) + text(100, 16, "400", d.ends) + text(124, 16, "400", d.empty);
   return iconButton(d.color, d.dimmed ? `<g opacity="0.5">${body}</g>` : `<g>${body}</g>`);
 }
 
-/** Account a key shows: its bound config dir, else the n-th account for the n-th unbound key. */
+/** Account a key shows: its bound config dir, else the account at unboundIndex. */
 export function pickAccount(
   accounts: AccountView[],
   configDir: string | undefined,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { burnRatePerHour, forecast, type Sample } from "../../src/usage/burn";
+import { burnRatePerHour, dampedBurnRate, forecast, type Sample } from "../../src/usage/burn";
 
 const H = 3_600_000;
 const s = (t: number, fiveHour: number | null, sevenDay: number | null = null): Sample => ({ t, fiveHour, sevenDay });
@@ -42,5 +42,35 @@ describe("forecast", () => {
 
   it("is unknown for a null rate", () => {
     expect(forecast(60, null, now, now + 5 * H)).toEqual({ kind: "unknown" });
+  });
+});
+
+describe("dampedBurnRate", () => {
+  const NOW = 100 * H;
+  const windowStart = NOW - 2 * H;
+  const args = { key: "fiveHour" as const, utilization: 60, windowStart, now: NOW };
+
+  it("is the window average alone when there is no recent rate", () => {
+    expect(dampedBurnRate({ ...args, samples: [] })).toBeCloseTo(30);
+  });
+
+  it("is the mean of the recent rate and the window average", () => {
+    const samples = [s(NOW - H / 2, 50), s(NOW, 60)];
+    expect(dampedBurnRate({ ...args, samples })).toBeCloseTo(25);
+  });
+
+  it("counts a negative recent rate as zero", () => {
+    const samples = [s(NOW - H / 2, 60), s(NOW, 50)];
+    expect(dampedBurnRate({ ...args, samples })).toBeCloseTo(15);
+  });
+
+  it("ignores samples older than an hour", () => {
+    const samples = [s(NOW - 90 * 60_000, 0), s(NOW - 80 * 60_000, 10)];
+    expect(dampedBurnRate({ ...args, samples })).toBeCloseTo(30);
+  });
+
+  it("is null until 6 minutes after the window opened", () => {
+    expect(dampedBurnRate({ ...args, windowStart: NOW - 5 * 60_000, samples: [] })).toBeNull();
+    expect(dampedBurnRate({ ...args, windowStart: NOW - 6 * 60_000, samples: [] })).not.toBeNull();
   });
 });
