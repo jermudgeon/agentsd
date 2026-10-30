@@ -116,6 +116,7 @@ export class SessionManager extends EventEmitter {
         model: payload.model ?? null,
         pendingPermission: null,
         permissionInTerminal: false,
+        waitingSince: null,
         pid: null,
         lastActivity: Date.now(),
       };
@@ -163,6 +164,7 @@ export class SessionManager extends EventEmitter {
       session.state = nextState;
     }
     if (session.state !== State.AWAITING_PERMISSION) session.permissionInTerminal = false;
+    this.syncWaiting(session);
 
     streamDeck.logger.info(`Event: ${event} session=${id} prev=${prevState} next=${session.state} hasPending=${!!session.pendingPermission} pid=${session.pid}`);
 
@@ -282,13 +284,28 @@ export class SessionManager extends EventEmitter {
     this.advancePermissionQueue();
   }
 
-  /** The session whose held request has waited longest, whichever session is active. */
+  /** Every session waiting on the user (held request, prompt in the terminal, or question), oldest first. */
+  get attentionQueue(): SessionState[] {
+    return [...this.sessions.values()]
+      .filter((s) => s.waitingSince !== null)
+      .sort((a, b) => a.waitingSince! - b.waitingSince!);
+  }
+
+  /** The session the deck describes: the oldest waiting one, else the active session. */
+  get foregroundSession(): SessionState | undefined {
+    return this.attentionQueue[0] ?? this.activeSession;
+  }
+
+  /** The oldest waiting session, when the deck can answer it (a held request); otherwise undefined. */
   get waitingSession(): SessionState | undefined {
-    for (const id of this.permissionQueue) {
-      const session = this.sessions.get(id);
-      if (session?.pendingPermission) return session;
-    }
-    return undefined;
+    const head = this.attentionQueue[0];
+    return head?.pendingPermission ? head : undefined;
+  }
+
+  private syncWaiting(session: SessionState): void {
+    const waiting = session.state === State.AWAITING_PERMISSION || session.state === State.AWAITING_ELICITATION;
+    if (!waiting) session.waitingSince = null;
+    else if (session.waitingSince === null) session.waitingSince = Date.now();
   }
 
   /** Answer the oldest held request. Returns its session id, or null when nothing is held. */
@@ -330,6 +347,7 @@ export class SessionManager extends EventEmitter {
 
     session.pendingPermission = null;
     session.state = State.PROCESSING;
+    this.syncWaiting(session);
     this.removeFromPermissionQueue(sessionId);
     this.emit("sessionUpdated", session, "PermissionRequest");
     this.advancePermissionQueue();
@@ -355,6 +373,7 @@ export class SessionManager extends EventEmitter {
     session.pendingPermission = null;
     // Agent continues processing after permission resolution
     session.state = State.PROCESSING;
+    this.syncWaiting(session);
     this.removeFromPermissionQueue(sessionId);
     this.emit("sessionUpdated", session, "PermissionRequest");
     this.advancePermissionQueue();

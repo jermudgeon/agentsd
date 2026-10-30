@@ -224,6 +224,74 @@ describe("SessionManager permission queue", () => {
     });
   });
 
+  describe("attention queue", () => {
+    beforeEach(() => vi.useFakeTimers({ toFake: ["Date"] }));
+    afterEach(() => vi.useRealTimers());
+
+    const SESSION_C = "sess-cccc-3333";
+    const at = (ms: number) => vi.setSystemTime(ms);
+
+    function threeAsking() {
+      m = new SessionManager();
+      for (const id of [SESSION_A, SESSION_B, SESSION_C]) m.handleEvent("SessionStart", { session_id: id });
+      at(1000);
+      m.handleEvent("PermissionRequest", { session_id: SESSION_A });
+      m.setPendingPermission(SESSION_A, makePendingPermission());
+      at(2000);
+      m.handleEvent("Elicitation", { session_id: SESSION_B });
+      at(3000);
+      m.handleEvent("PermissionRequest", { session_id: SESSION_C });
+      m.setPendingPermission(SESSION_C, makePendingPermission());
+      return m;
+    }
+
+    it("orders every waiting session by when it began waiting, whatever it is waiting for", () => {
+      threeAsking();
+      expect(m.attentionQueue.map((s) => s.id)).toEqual([SESSION_A, SESSION_B, SESSION_C]);
+      expect(m.foregroundSession?.id).toBe(SESSION_A);
+    });
+
+    it("falls back to the active session when nothing is waiting", () => {
+      m = new SessionManager();
+      m.handleEvent("SessionStart", { session_id: SESSION_A });
+      expect(m.attentionQueue).toEqual([]);
+      expect(m.foregroundSession?.id).toBe(SESSION_A);
+    });
+
+    it("a prompt handed to the terminal keeps its place at the head", () => {
+      threeAsking();
+      m.clearPendingPermissionById(SESSION_A);
+      expect(m.attentionQueue.map((s) => s.id)).toEqual([SESSION_A, SESSION_B, SESSION_C]);
+    });
+
+    it("the deck answers nothing while the oldest question is waiting in the terminal", () => {
+      threeAsking();
+      m.clearPendingPermissionById(SESSION_A);
+      expect(m.waitingSession).toBeUndefined();
+      expect(m.resolveOldest(true)).toBeNull();
+    });
+
+    it("answering the head moves the next question to the front", () => {
+      threeAsking();
+      expect(m.resolveOldest(true)).toBe(SESSION_A);
+      expect(m.attentionQueue.map((s) => s.id)).toEqual([SESSION_B, SESSION_C]);
+      expect(m.waitingSession).toBeUndefined();
+    });
+
+    it("a session leaves the queue once its terminal prompt is answered", () => {
+      threeAsking();
+      m.clearPendingPermissionById(SESSION_A);
+      m.handleEvent("PostToolUse", { session_id: SESSION_A });
+      expect(m.attentionQueue.map((s) => s.id)).toEqual([SESSION_B, SESSION_C]);
+    });
+
+    it("a question leaves the queue when its result arrives", () => {
+      threeAsking();
+      m.handleEvent("ElicitationResult", { session_id: SESSION_B });
+      expect(m.attentionQueue.map((s) => s.id)).toEqual([SESSION_A, SESSION_C]);
+    });
+  });
+
   describe("when a held permission times out and the prompt is handed to the terminal", () => {
     function handedOff() {
       m = new SessionManager();

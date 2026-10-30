@@ -6,7 +6,7 @@ import { iconButton } from "../util/svg";
 export class AlwaysAllowButton extends ManagedAction {
   override onKeyDown(_ev: KeyDownEvent): void {
     const id = this.manager?.resolveOldestAlwaysAllow();
-    streamDeck.logger.info(id ? `Always Allow: answered session=${id}` : "Always Allow pressed: no request is held");
+    streamDeck.logger.info(id ? `Always Allow: answered session=${id}` : this.manager?.attentionQueue.length ? "Always Allow pressed: the oldest question is waiting in the terminal" : "Always Allow pressed: no request is held");
   }
 
   protected render(): void {

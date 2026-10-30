@@ -6,7 +6,7 @@ import { iconButton } from "../util/svg";
 export class DenyButton extends ManagedAction {
   override onKeyDown(_ev: KeyDownEvent): void {
     const id = this.manager?.resolveOldest(false);
-    streamDeck.logger.info(id ? `Deny: answered session=${id}` : "Deny pressed: no request is held");
+    streamDeck.logger.info(id ? `Deny: answered session=${id}` : this.manager?.attentionQueue.length ? "Deny pressed: the oldest question is waiting in the terminal" : "Deny pressed: no request is held");
   }
 
   protected render(): void {

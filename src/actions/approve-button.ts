@@ -6,7 +6,7 @@ import { iconButton } from "../util/svg";
 export class ApproveButton extends ManagedAction {
   override onKeyDown(_ev: KeyDownEvent): void {
     const id = this.manager?.resolveOldest(true);
-    streamDeck.logger.info(id ? `Approve: answered session=${id}` : "Approve pressed: no request is held");
+    streamDeck.logger.info(id ? `Approve: answered session=${id}` : this.manager?.attentionQueue.length ? "Approve pressed: the oldest question is waiting in the terminal" : "Approve pressed: no request is held");
   }
 
   protected render(): void {

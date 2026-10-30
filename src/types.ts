@@ -63,6 +63,8 @@ export interface SessionState {
   lastError: string | null;
   model: string | null;
   pendingPermission: PendingPermission | null;
+  /** Epoch ms when the session started waiting on the user; null when it is not waiting. */
+  waitingSince: number | null;
   /** True after a held permission timed out and the prompt was handed to the terminal. */
   permissionInTerminal: boolean;
   /** PID of the Claude Code process, resolved from hook connection. */
