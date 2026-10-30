@@ -156,17 +156,53 @@ describe("SessionManager permission queue", () => {
   let m: SessionManager;
   afterEach(() => m?.stop());
 
-  it("clearPendingPermissionById clears state and returns to PROCESSING", () => {
-    m = new SessionManager();
-    m.handleEvent("SessionStart", { session_id: SESSION_A });
-    m.handleEvent("PermissionRequest", { session_id: SESSION_A });
-    const pending = makePendingPermission();
-    m.setPendingPermission(SESSION_A, pending);
-    expect(m.activeSession?.state).toBe(State.AWAITING_PERMISSION);
+  describe("when a held permission times out and the prompt is handed to the terminal", () => {
+    function handedOff() {
+      m = new SessionManager();
+      m.handleEvent("SessionStart", { session_id: SESSION_A });
+      m.handleEvent("PermissionRequest", { session_id: SESSION_A });
+      m.setPendingPermission(SESSION_A, makePendingPermission());
+      m.clearPendingPermissionById(SESSION_A);
+      return m;
+    }
 
-    m.clearPendingPermissionById(SESSION_A);
-    expect(m.activeSession?.state).toBe(State.PROCESSING);
-    expect(m.activeSession?.pendingPermission).toBeNull();
+    it("clears the held request but keeps the session waiting, flagged as in the terminal", () => {
+      handedOff();
+      expect(m.activeSession?.pendingPermission).toBeNull();
+      expect(m.activeSession?.state).toBe(State.AWAITING_PERMISSION);
+      expect(m.activeSession?.permissionInTerminal).toBe(true);
+    });
+
+    it("ignores a parallel PreToolUse while the terminal prompt is open", () => {
+      handedOff();
+      m.handleEvent("PreToolUse", { session_id: SESSION_A });
+      expect(m.activeSession?.state).toBe(State.AWAITING_PERMISSION);
+    });
+
+    it.each(["PostToolUse", "PostToolUseFailure", "UserPromptSubmit"] as HookEventName[])(
+      "%s means the prompt was answered: back to PROCESSING, flag cleared",
+      (event) => {
+        handedOff();
+        m.handleEvent(event, { session_id: SESSION_A });
+        expect(m.activeSession?.state).toBe(State.PROCESSING);
+        expect(m.activeSession?.permissionInTerminal).toBe(false);
+      },
+    );
+
+    it("Stop returns the session to IDLE and clears the flag", () => {
+      handedOff();
+      m.handleEvent("Stop", { session_id: SESSION_A });
+      expect(m.activeSession?.state).toBe(State.IDLE);
+      expect(m.activeSession?.permissionInTerminal).toBe(false);
+    });
+
+    it("a new PermissionRequest takes over from the terminal flag", () => {
+      handedOff();
+      m.handleEvent("PermissionRequest", { session_id: SESSION_A });
+      m.setPendingPermission(SESSION_A, makePendingPermission());
+      expect(m.activeSession?.permissionInTerminal).toBe(false);
+      expect(m.activeSession?.pendingPermission).not.toBeNull();
+    });
   });
 
   it("resolvePermission writes allow response on approve", () => {

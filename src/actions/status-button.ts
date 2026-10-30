@@ -27,6 +27,7 @@ export class StatusButton extends ManagedAction {
         break;
       case State.AWAITING_PERMISSION:
         lines.push("Permission?");
+        if (session.permissionInTerminal) lines.push("in terminal");
         break;
       case State.AWAITING_ELICITATION:
         lines.push("Question?");

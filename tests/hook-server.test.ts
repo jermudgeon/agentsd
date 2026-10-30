@@ -128,7 +128,7 @@ describe("HookServer PermissionRequest hold-open", () => {
     expect(body.hookSpecificOutput.decision.behavior).toBe("allow");
   });
 
-  it("writes deny response on timeout", async () => {
+  it("hands the prompt back to the terminal on timeout: empty answer, session still waiting", async () => {
     // Short timeout so the test runs fast; no fake timers (real HTTP server).
     await startServer({ permissionTimeoutMs: 100 });
 
@@ -137,11 +137,11 @@ describe("HookServer PermissionRequest hold-open", () => {
       body: JSON.stringify({ session_id: SESSION_A, tool_name: "Bash" }),
     });
     expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.hookSpecificOutput.decision.behavior).toBe("deny");
-    expect(body.hookSpecificOutput.decision.message).toBe("Timed out");
-    // SessionManager should have cleared the pending state.
+    expect(await res.json()).toEqual({});
+    // The held request is cleared, but the session keeps waiting for the terminal answer.
     expect(manager.getSnapshot()[0].hasPendingPermission).toBe(false);
+    expect(manager.activeSession?.state).toBe(State.AWAITING_PERMISSION);
+    expect(manager.activeSession?.permissionInTerminal).toBe(true);
   });
 });
 
