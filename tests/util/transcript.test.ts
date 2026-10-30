@@ -31,6 +31,21 @@ describe("extractModel", () => {
     expect(await extractModel(path)).toBe("claude-opus-4-7");
   });
 
+  it("skips the <synthetic> model Claude Code writes on messages it generates itself", async () => {
+    const path = await writeJsonl([
+      { type: "assistant", message: { role: "assistant", model: "claude-opus-4-7", content: "ok" } },
+      { type: "assistant", message: { role: "assistant", model: "<synthetic>", content: "You've hit your limit" } },
+    ]);
+    expect(await extractModel(path)).toBe("claude-opus-4-7");
+  });
+
+  it("returns null when the only model is <synthetic>", async () => {
+    const path = await writeJsonl([
+      { type: "assistant", message: { role: "assistant", model: "<synthetic>", content: "x" } },
+    ]);
+    expect(await extractModel(path)).toBeNull();
+  });
+
   it("returns null when the file does not exist", async () => {
     expect(await extractModel("/nonexistent/path/transcript.jsonl")).toBeNull();
   });
