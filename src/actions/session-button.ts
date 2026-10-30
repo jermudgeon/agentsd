@@ -3,6 +3,7 @@ import { basename } from "node:path";
 import { ManagedAction } from "./base";
 import { State } from "../types";
 import { escapeXml, svgDataUri, wrapLabel } from "../util/svg";
+import { focusSessionTerminal } from "../util/terminal";
 
 const STATE_COLORS: Record<State, string> = {
   [State.DISCONNECTED]: "#333333",
@@ -15,7 +16,8 @@ const STATE_COLORS: Record<State, string> = {
 @action({ UUID: "com.paultyng.agentsd.session" })
 export class SessionButton extends ManagedAction {
   override onKeyDown(_ev: KeyDownEvent): void {
-    this.manager?.cycleSession(1);
+    const session = this.manager?.cycleSession(1);
+    if (session?.pid) void focusSessionTerminal(session.pid);
   }
 
   protected render(): void {
