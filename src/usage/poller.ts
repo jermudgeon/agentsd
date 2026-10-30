@@ -10,6 +10,18 @@ const HISTORY_MS = 2 * 3_600_000;
 const BACKOFF_BASE_MS = 120_000;
 const BACKOFF_MAX_MS = 600_000;
 const MAX_ACCOUNTS = 2;
+const READ_TIMEOUT_MS = 10_000;
+const FETCH_TIMEOUT_MS = 15_000;
+
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error("timeout")), ms);
+    p.then(
+      (v) => { clearTimeout(t); resolve(v); },
+      (e) => { clearTimeout(t); reject(e); },
+    );
+  });
+}
 
 export interface AccountView {
   configDir: string;
@@ -63,7 +75,13 @@ export class UsagePoller extends EventEmitter {
     } catch {
       // No saved accounts; discovery starts over from session events.
     }
-    for (const dir of saved) this.add(dir);
+    // Dirs noted before the saved list arrived rank after it, so a restart cannot displace a saved account.
+    const earlier = this.entries.slice(1).map((e) => e.view.configDir);
+    this.entries.length = 1;
+    for (const dir of [...saved, ...earlier]) this.add(dir);
+    if (earlier.some((d) => !saved.includes(d))) {
+      this.deps.saveAccounts(this.entries.map((e) => e.view.configDir)).catch(() => {});
+    }
     this.stop();
     this.timer = setInterval(() => void this.pollOnce(), POLL_INTERVAL_MS);
     await this.pollOnce();
@@ -78,8 +96,11 @@ export class UsagePoller extends EventEmitter {
     if (this.polling) return;
     this.polling = true;
     try {
-      const results = await Promise.all(this.entries.map((e) => this.pollAccount(e).catch(() => false)));
-      if (results.some(Boolean)) this.emit("updated");
+      await Promise.all(
+        this.entries.map(async (e) => {
+          if (await this.pollAccount(e).catch(() => false)) this.emit("updated");
+        }),
+      );
     } finally {
       this.polling = false;
     }
@@ -100,12 +121,20 @@ export class UsagePoller extends EventEmitter {
     const now = this.deps.now();
     if (now < entry.retryAt) return false;
 
-    const cred = await this.deps.readCredential(keychainService(entry.view.configDir, this.deps.home));
+    let cred: Credential | null;
+    try {
+      cred = await withTimeout(
+        this.deps.readCredential(keychainService(entry.view.configDir, this.deps.home)),
+        READ_TIMEOUT_MS,
+      );
+    } catch {
+      return this.fail(entry, now);
+    }
     if (!cred) return this.fail(entry, now);
     if (cred.expiresAt <= now) return false;
 
     try {
-      const reading = await this.deps.fetchUsage(cred.accessToken);
+      const reading = await withTimeout(this.deps.fetchUsage(cred.accessToken), FETCH_TIMEOUT_MS);
       entry.failures = 0;
       entry.retryAt = 0;
       entry.view.reading = reading;

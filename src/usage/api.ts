@@ -1,4 +1,5 @@
 export const USAGE_URL = "https://api.anthropic.com/api/oauth/usage";
+const REQUEST_TIMEOUT_MS = 15_000;
 
 export interface UsageWindow {
   /** Percent of the window used. */
@@ -31,6 +32,7 @@ function toWindow(w: unknown): UsageWindow | null {
 export async function fetchUsage(accessToken: string, fetchFn: typeof fetch = fetch): Promise<UsageReading> {
   const res = await fetchFn(USAGE_URL, {
     headers: { Authorization: `Bearer ${accessToken}`, "anthropic-beta": "oauth-2025-04-20" },
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
   if (!res.ok) throw new UsageHttpError(res.status);
   const body = (await res.json()) as { five_hour?: unknown; seven_day?: unknown };

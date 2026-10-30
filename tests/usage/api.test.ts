@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import { fetchUsage, UsageHttpError } from "../../src/usage/api";
 
 function fakeFetch(status: number, body: unknown) {
-  const calls: { url: string; headers: Record<string, string> }[] = [];
+  const calls: { url: string; headers: Record<string, string>; signal?: AbortSignal | null }[] = [];
   const fn = (async (url: string | URL | Request, init?: RequestInit) => {
-    calls.push({ url: String(url), headers: init?.headers as Record<string, string> });
+    calls.push({ url: String(url), headers: init?.headers as Record<string, string>, signal: init?.signal });
     return new Response(JSON.stringify(body), { status });
   }) as typeof fetch;
   return { fn, calls };
@@ -18,6 +18,12 @@ describe("fetchUsage", () => {
     expect(calls[0].url).toBe("https://api.anthropic.com/api/oauth/usage");
     expect(calls[0].headers.Authorization).toBe("Bearer tok");
     expect(calls[0].headers["anthropic-beta"]).toBe("oauth-2025-04-20");
+  });
+
+  it("passes an abort signal so a stalled request cannot hang the poll", async () => {
+    const { fn, calls } = fakeFetch(200, {});
+    await fetchUsage("tok", fn);
+    expect(calls[0].signal).toBeInstanceOf(AbortSignal);
   });
 
   it("maps windows and nulls", async () => {

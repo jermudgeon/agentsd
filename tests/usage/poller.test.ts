@@ -185,3 +185,56 @@ describe("start/stop", () => {
     expect(deps.readCredential).toHaveBeenCalledTimes(2);
   });
 });
+
+describe("stalled dependencies", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it("backs off an account whose credential read stalls, without blocking the other account", async () => {
+    const { deps, poller, advance } = setup();
+    deps.readCredential = vi.fn((service: string) =>
+      service === "Claude Code-credentials"
+        ? Promise.resolve({ accessToken: service, expiresAt: Date.now() + HOUR, subscriptionType: "pro" })
+        : new Promise<never>(() => {}));
+    poller.noteConfigDir(IDEALOFT_DIR);
+    const updated = vi.fn();
+    poller.on("updated", updated);
+
+    const p = poller.pollOnce();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(poller.accounts()[0].reading).toEqual(READING);
+    expect(updated).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(10_000);
+    await p;
+    expect(poller.accounts()[1].reading).toBeNull();
+
+    advance(2 * MIN - 1);
+    await poller.pollOnce();
+    expect(deps.readCredential).toHaveBeenCalledTimes(3);
+  });
+
+  it("gives up on a stalled usage request after 15 seconds", async () => {
+    const { deps, poller } = setup();
+    deps.fetchUsage = vi.fn(() => new Promise<never>(() => {}));
+    const p = poller.pollOnce();
+    await vi.advanceTimersByTimeAsync(15_000);
+    await expect(p).resolves.toBeUndefined();
+    expect(poller.accounts()[0].reading).toBeNull();
+  });
+});
+
+describe("start-up race", () => {
+  it("keeps saved accounts ahead of a dir noted before the saved list loads, and repairs the saved list", async () => {
+    let release!: (dirs: string[]) => void;
+    const loaded = new Promise<string[]>((r) => { release = r; });
+    const { deps, poller } = setup({ loadAccounts: () => loaded });
+    const started = poller.start();
+    poller.noteConfigDir("/Users/jhaustin/.claude-other");
+    release([IDEALOFT_DIR]);
+    await started;
+    poller.stop();
+    expect(poller.accounts().map((a) => a.configDir)).toEqual([DEFAULT_DIR, IDEALOFT_DIR]);
+    expect((deps.saveAccounts as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0]).toEqual([DEFAULT_DIR, IDEALOFT_DIR]);
+  });
+});

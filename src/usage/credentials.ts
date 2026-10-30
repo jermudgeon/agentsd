@@ -12,7 +12,9 @@ export interface Credential {
 
 export type Run = (cmd: string, args: string[]) => Promise<string>;
 
-const defaultRun: Run = async (cmd, args) => (await execFileAsync(cmd, args)).stdout;
+const KEYCHAIN_TIMEOUT_MS = 10_000;
+
+const defaultRun: Run = async (cmd, args) => (await execFileAsync(cmd, args, { timeout: KEYCHAIN_TIMEOUT_MS })).stdout;
 
 /**
  * Read a Claude Code OAuth credential from the macOS Keychain.

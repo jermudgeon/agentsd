@@ -9,6 +9,11 @@ describe("configDirFromTranscript", () => {
       .toBe("/Users/jhaustin/.claude-idealoft");
   });
 
+  it("uses the last /projects/ so a config dir path may contain one", () => {
+    expect(configDirFromTranscript("/Users/x/projects/claude-cfg/projects/-p/s.jsonl"))
+      .toBe("/Users/x/projects/claude-cfg");
+  });
+
   it.each([undefined, "", "projects/x.jsonl", "/tmp/no-marker.jsonl", "relative/.claude/projects/x.jsonl"])(
     "returns null for %j",
     (p) => {
