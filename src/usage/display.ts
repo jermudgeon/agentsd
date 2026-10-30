@@ -15,7 +15,7 @@ export interface KeyDisplay {
 const NEUTRAL = "#30363d";
 const AMBER = "#d29922";
 const RED = "#da3633";
-const STALE_AFTER_MS = 3 * 60_000;
+const STALE_AFTER_MS = 12 * 60_000;
 const FIVE_HOUR_MS = 5 * 3_600_000;
 const ORDER: Metric[] = ["fiveHour", "sevenDay", "forecast"];
 

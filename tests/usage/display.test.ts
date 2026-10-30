@@ -73,9 +73,9 @@ describe("usageDisplay: 5-hour and 7-day", () => {
     expect(d.dimmed).toBe(true);
   });
 
-  it("is not stale within 3 minutes", () => {
-    expect(usageDisplay("a", "fiveHour", { ...account(), readAt: NOW - 3 * M }, NOW).dimmed).toBe(false);
-    expect(usageDisplay("a", "fiveHour", { ...account(), readAt: NOW - 3 * M - 1 }, NOW).dimmed).toBe(true);
+  it("is not stale within 12 minutes", () => {
+    expect(usageDisplay("a", "fiveHour", { ...account(), readAt: NOW - 12 * M }, NOW).dimmed).toBe(false);
+    expect(usageDisplay("a", "fiveHour", { ...account(), readAt: NOW - 12 * M - 1 }, NOW).dimmed).toBe(true);
   });
 });
 

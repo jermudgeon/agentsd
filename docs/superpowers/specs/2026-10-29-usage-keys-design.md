@@ -22,7 +22,7 @@ The Stream Deck shows, for each locally logged-in Claude account (at most two), 
 
 - Each poll of an account is one `GET https://api.anthropic.com/api/oauth/usage` with the account's access token and `anthropic-beta: oauth-2025-04-20`.
 - The fields used are `five_hour` and `seven_day`, each with `utilization` (percent used) and `resets_at` (ISO 8601 UTC), plus the plan type from the credential.
-- Every known account's credential is checked every 60 seconds, independent of whether the account has an open session. The usage request is made only when the credential is unexpired, so an idle account's key resumes updating as soon as Claude Code refreshes its credential.
+- Every known account's credential is checked every 5 minutes, independent of whether the account has an open session. The usage request is made only when the credential is unexpired, so an idle account's key resumes updating as soon as Claude Code refreshes its credential.
 - After an HTTP 429 or 401 an account's next request waits 2, 4, 8 minutes and so on, capped at 10 minutes, and the wait resets on the next success.
 - Each successful poll appends `(time, five_hour utilization, seven_day utilization)` to that account's in-memory history, kept for the trailing 2 hours.
 
@@ -36,7 +36,7 @@ The Stream Deck shows, for each locally logged-in Claude account (at most two), 
 - Each Usage key shows the account label, one metric as a large percentage, and a one-line subtitle. A press cycles the metric: 5-hour used, 7-day used, burn forecast. Each key holds its own metric, which resets to 5-hour used on restart.
 - 5-hour and 7-day views show the countdown to `resets_at` as the subtitle. The forecast view shows `OK` or the time to exhaustion.
 - The key's background colour follows the displayed utilization: below 70% neutral, 70% to 89% amber, 90% and above red. In the forecast view red means exhaustion is projected before reset.
-- When the latest poll failed or the credential is expired, the key shows the last known values dimmed with the age of that reading (`stale 21h`). With no reading yet it shows `--`.
+- When the last good reading is older than 12 minutes (a poll failed, the credential is expired, or the endpoint is rate-limiting), the key shows the last known values dimmed with the age of that reading (`stale 21h`). With no reading yet it shows `--`.
 - The key shows only what the API returned; it never estimates utilization from transcripts.
 
 ## Placement

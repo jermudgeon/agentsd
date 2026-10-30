@@ -174,11 +174,13 @@ describe("start/stop", () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
 
-  it("polls immediately and then every 60 seconds until stopped", async () => {
+  it("polls immediately and then every 5 minutes until stopped", async () => {
     const { deps, poller } = setup();
     await poller.start();
     expect(deps.readCredential).toHaveBeenCalledTimes(1);
-    await vi.advanceTimersByTimeAsync(60_000);
+    await vi.advanceTimersByTimeAsync(299_999);
+    expect(deps.readCredential).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
     expect(deps.readCredential).toHaveBeenCalledTimes(2);
     poller.stop();
     await vi.advanceTimersByTimeAsync(180_000);

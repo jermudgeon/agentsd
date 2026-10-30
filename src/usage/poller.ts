@@ -5,7 +5,7 @@ import { UsageHttpError, type UsageReading } from "./api";
 import type { Sample } from "./burn";
 import type { Credential } from "./credentials";
 
-const POLL_INTERVAL_MS = 60_000;
+const POLL_INTERVAL_MS = 300_000;
 const HISTORY_MS = 2 * 3_600_000;
 const BACKOFF_BASE_MS = 120_000;
 const BACKOFF_MAX_MS = 600_000;
