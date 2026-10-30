@@ -21,11 +21,13 @@ export class SessionButton extends ManagedAction {
   }
 
   protected render(): void {
-    const session = this.manager?.activeSession;
+    const waiting = this.manager?.waitingSession;
+    const session = waiting ?? this.manager?.activeSession;
     const title = session ? basename(session.cwd) : "No Session";
     const color = session ? STATE_COLORS[session.state] : STATE_COLORS[State.DISCONNECTED];
     const count = this.manager?.sessionCount ?? 0;
-    const suffix = count > 1 ? `(${(this.manager?.activeIndex ?? 0) + 1}/${count})` : "";
+    const showsWaiting = !!waiting && waiting.id !== this.manager?.activeSession?.id;
+    const suffix = showsWaiting ? "waiting" : count > 1 ? `(${(this.manager?.activeIndex ?? 0) + 1}/${count})` : "";
 
     const lines = wrapLabel(title, 11, 3);
     const centerY = suffix ? 56 : 72;

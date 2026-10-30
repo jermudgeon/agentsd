@@ -13,7 +13,7 @@ function agentColor(count: number): string | null {
 @action({ UUID: "com.paultyng.agentsd.status" })
 export class StatusButton extends ManagedAction {
   protected render(): void {
-    const session = this.manager?.activeSession;
+    const session = this.manager?.waitingSession ?? this.manager?.activeSession;
     if (!session) {
       for (const act of this.actions) act.setTitle("—");
       return;

@@ -1,19 +1,16 @@
-import { action, type KeyDownEvent } from "@elgato/streamdeck";
+import streamDeck, { action, type KeyDownEvent } from "@elgato/streamdeck";
 import { ManagedAction } from "./base";
-import { State } from "../types";
 import { iconButton } from "../util/svg";
 
 @action({ UUID: "com.paultyng.agentsd.approve" })
 export class ApproveButton extends ManagedAction {
   override onKeyDown(_ev: KeyDownEvent): void {
-    const session = this.manager?.activeSession;
-    if (!session || session.state !== State.AWAITING_PERMISSION) return;
-    this.manager.resolvePermission(session.id, true);
+    const id = this.manager?.resolveOldest(true);
+    streamDeck.logger.info(id ? `Approve: answered session=${id}` : "Approve pressed: no request is held");
   }
 
   protected render(): void {
-    const session = this.manager?.activeSession;
-    const awaiting = session?.state === State.AWAITING_PERMISSION;
+    const awaiting = !!this.manager?.waitingSession;
     const icon = iconButton(
       awaiting ? "#1a7f37" : "#555555",
       `<path d="M40 72 L62 94 L104 52" stroke="white" stroke-width="10" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`,

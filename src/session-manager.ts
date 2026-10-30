@@ -282,6 +282,26 @@ export class SessionManager extends EventEmitter {
     this.advancePermissionQueue();
   }
 
+  /** The session whose held request has waited longest, whichever session is active. */
+  get waitingSession(): SessionState | undefined {
+    for (const id of this.permissionQueue) {
+      const session = this.sessions.get(id);
+      if (session?.pendingPermission) return session;
+    }
+    return undefined;
+  }
+
+  /** Answer the oldest held request. Returns its session id, or null when nothing is held. */
+  resolveOldest(allow: boolean): string | null {
+    const session = this.waitingSession;
+    return session && this.resolvePermission(session.id, allow) ? session.id : null;
+  }
+
+  resolveOldestAlwaysAllow(): string | null {
+    const session = this.waitingSession;
+    return session && this.resolvePermissionAlwaysAllow(session.id) ? session.id : null;
+  }
+
   resolvePermissionAlwaysAllow(sessionId: string): boolean {
     const session = this.sessions.get(sessionId);
     if (!session?.pendingPermission) return false;

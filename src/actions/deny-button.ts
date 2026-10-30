@@ -1,19 +1,16 @@
-import { action, type KeyDownEvent } from "@elgato/streamdeck";
+import streamDeck, { action, type KeyDownEvent } from "@elgato/streamdeck";
 import { ManagedAction } from "./base";
-import { State } from "../types";
 import { iconButton } from "../util/svg";
 
 @action({ UUID: "com.paultyng.agentsd.deny" })
 export class DenyButton extends ManagedAction {
   override onKeyDown(_ev: KeyDownEvent): void {
-    const session = this.manager?.activeSession;
-    if (!session || session.state !== State.AWAITING_PERMISSION) return;
-    this.manager.resolvePermission(session.id, false);
+    const id = this.manager?.resolveOldest(false);
+    streamDeck.logger.info(id ? `Deny: answered session=${id}` : "Deny pressed: no request is held");
   }
 
   protected render(): void {
-    const session = this.manager?.activeSession;
-    const awaiting = session?.state === State.AWAITING_PERMISSION;
+    const awaiting = !!this.manager?.waitingSession;
     const icon = iconButton(
       awaiting ? "#da3633" : "#555555",
       `<path d="M44 44 L100 100 M100 44 L44 100" stroke="white" stroke-width="10" stroke-linecap="round"/>`,

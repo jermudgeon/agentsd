@@ -156,6 +156,74 @@ describe("SessionManager permission queue", () => {
   let m: SessionManager;
   afterEach(() => m?.stop());
 
+  describe("answering the oldest held request", () => {
+    const sent = (p: PendingPermission) => JSON.parse((p.res.end as ReturnType<typeof vi.fn>).mock.calls[0][0]);
+
+    /** A holds a request; B is the active session (as after cycling with the Session key). */
+    function twoSessions() {
+      m = new SessionManager();
+      for (const id of [SESSION_A, SESSION_B]) {
+        m.handleEvent("SessionStart", { session_id: id });
+      }
+      m.handleEvent("PermissionRequest", { session_id: SESSION_A });
+      const pendA = makePendingPermission();
+      m.setPendingPermission(SESSION_A, pendA);
+      m.focusSession(SESSION_B);
+      expect(m.activeSession?.id).toBe(SESSION_B);
+      return pendA;
+    }
+
+    it("waitingSession is the session holding a request, even when another is active", () => {
+      twoSessions();
+      expect(m.waitingSession?.id).toBe(SESSION_A);
+    });
+
+    it("waitingSession is undefined when nothing is held", () => {
+      m = new SessionManager();
+      m.handleEvent("SessionStart", { session_id: SESSION_A });
+      expect(m.waitingSession).toBeUndefined();
+    });
+
+    it("resolveOldest(true) allows the held request and returns its session id", () => {
+      const pendA = twoSessions();
+      expect(m.resolveOldest(true)).toBe(SESSION_A);
+      expect(sent(pendA).hookSpecificOutput.decision.behavior).toBe("allow");
+      expect(m.waitingSession).toBeUndefined();
+    });
+
+    it("resolveOldest(false) denies it", () => {
+      const pendA = twoSessions();
+      expect(m.resolveOldest(false)).toBe(SESSION_A);
+      expect(sent(pendA).hookSpecificOutput.decision.behavior).toBe("deny");
+    });
+
+    it("resolveOldestAlwaysAllow allows it and adds a session rule", () => {
+      const pendA = twoSessions();
+      expect(m.resolveOldestAlwaysAllow()).toBe(SESSION_A);
+      const decision = sent(pendA).hookSpecificOutput.decision;
+      expect(decision.behavior).toBe("allow");
+      expect(decision.updatedPermissions[0].destination).toBe("session");
+    });
+
+    it("returns null when nothing is held, including a prompt already handed to the terminal", () => {
+      m = new SessionManager();
+      m.handleEvent("SessionStart", { session_id: SESSION_A });
+      m.handleEvent("PermissionRequest", { session_id: SESSION_A });
+      m.setPendingPermission(SESSION_A, makePendingPermission());
+      m.clearPendingPermissionById(SESSION_A);
+      expect(m.resolveOldest(true)).toBeNull();
+      expect(m.resolveOldestAlwaysAllow()).toBeNull();
+    });
+
+    it("moves on to the next held request after the first is answered", () => {
+      twoSessions();
+      m.handleEvent("PermissionRequest", { session_id: SESSION_B });
+      m.setPendingPermission(SESSION_B, makePendingPermission());
+      expect(m.resolveOldest(true)).toBe(SESSION_A);
+      expect(m.waitingSession?.id).toBe(SESSION_B);
+    });
+  });
+
   describe("when a held permission times out and the prompt is handed to the terminal", () => {
     function handedOff() {
       m = new SessionManager();
