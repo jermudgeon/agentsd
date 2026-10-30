@@ -1,7 +1,7 @@
 import { action } from "@elgato/streamdeck";
 import { ManagedAction } from "./base";
 import { State } from "../types";
-import { iconButton } from "../util/svg";
+import { textButton } from "../util/svg";
 
 const AGENT_COLORS = ["#1f6feb", "#d29922", "#e16f24", "#da3633"];
 
@@ -47,13 +47,12 @@ export class StatusButton extends ManagedAction {
       lines.push("", `${session.activeWork} agent${session.activeWork > 1 ? "s" : ""}`);
     }
 
-    const text = lines.join("\n");
     const errorColor = session.state === State.IDLE && session.lastError ? "#da3633" : null;
     const color = errorColor ?? agentColor(session.activeWork);
 
     for (const act of this.actions) {
-      act.setTitle(text);
-      act.setImage(color ? iconButton(color, "") : undefined);
+      act.setTitle("");
+      act.setImage(textButton(color ?? "#000000", lines));
     }
   }
 }
