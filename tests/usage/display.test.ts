@@ -61,6 +61,10 @@ describe("usageDisplay: 5-hour", () => {
     expect(five(account({ five: pct, fiveResetsAt: NOW + 10 * M })).color).toBe(color);
   });
 
+  it("says empty now when the window is already used up", () => {
+    expect(five(account({ five: 100, fiveResetsAt: NOW + H })).empty).toBe("empty now");
+  });
+
   it("shows -- for the projection in the first minutes of a window", () => {
     expect(five(account({ five: 5, fiveResetsAt: NOW + 5 * H - 3 * M })).empty).toBe("empty --");
   });

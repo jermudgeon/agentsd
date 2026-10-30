@@ -83,7 +83,8 @@ export function usageDisplay(
   return {
     ...base,
     ends: `ends ${clock(win.resetsAt, now, tz)}`,
-    empty: f.kind === "exhaust" ? `empty ${clock(f.at, now, tz)}` : f.kind === "ok" ? "lasts" : "empty --",
+    empty:
+      f.kind === "exhaust" ? (f.at <= now ? "empty now" : `empty ${clock(f.at, now, tz)}`) : f.kind === "ok" ? "lasts" : "empty --",
     color: f.kind === "exhaust" ? RED : color,
     dimmed: false,
   };

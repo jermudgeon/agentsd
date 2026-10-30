@@ -1,17 +1,34 @@
-import { action, type KeyDownEvent } from "@elgato/streamdeck";
+import { action, type KeyDownEvent, type WillAppearEvent } from "@elgato/streamdeck";
 import { basename } from "node:path";
 import { ManagedAction } from "./base";
 import { sessionKeyView, STATE_COLORS, waitKind } from "../session-view";
 import { State } from "../types";
 import { escapeXml, svgDataUri, wrapLabel } from "../util/svg";
-import { focusSessionTerminal } from "../util/terminal";
+import { focusSessionTerminal, terminalTitles } from "../util/terminal";
 
 const FLASH_MS = 600;
+const TITLE_REFRESH_MS = 5_000;
 
 @action({ UUID: "com.paultyng.agentsd.session" })
 export class SessionButton extends ManagedAction {
   private flashOn = false;
   private flashTimer: ReturnType<typeof setInterval> | null = null;
+  private titles = new Map<number, string>();
+  private titleTimer: ReturnType<typeof setInterval> | null = null;
+
+  override onWillAppear(ev: WillAppearEvent): void {
+    super.onWillAppear(ev);
+    this.titleTimer ??= setInterval(() => void this.refreshTitles(), TITLE_REFRESH_MS);
+    void this.refreshTitles();
+  }
+
+  /** Reads the terminal titles from Ghostty and redraws when one changed. */
+  private async refreshTitles(): Promise<void> {
+    const next = await terminalTitles();
+    const changed = next.size !== this.titles.size || [...next].some(([pid, t]) => this.titles.get(pid) !== t);
+    this.titles = next;
+    if (changed) this.render();
+  }
 
   /** Raises the oldest waiting session's terminal; with nothing waiting, cycles to the next session. */
   override onKeyDown(_ev: KeyDownEvent): void {
@@ -21,7 +38,7 @@ export class SessionButton extends ManagedAction {
 
   protected render(): void {
     const session = this.manager?.foregroundSession;
-    const title = session ? basename(session.cwd) : "No Session";
+    const title = session ? (session.pid ? this.titles.get(session.pid) : undefined) ?? basename(session.cwd) : "No Session";
     const view = session
       ? sessionKeyView({
           state: session.state,
