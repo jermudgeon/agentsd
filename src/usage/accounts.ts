@@ -6,7 +6,7 @@ const KEYCHAIN_BASE = "Claude Code-credentials";
 
 /** Config dir of the session that wrote this transcript: the absolute part before `/projects/`. */
 export function configDirFromTranscript(path: string | undefined): string | null {
-  if (!path || !path.startsWith("/")) return null;
+  if (typeof path !== "string" || !path.startsWith("/")) return null;
   const idx = path.lastIndexOf(PROJECTS_MARKER);
   return idx > 0 ? path.slice(0, idx) : null;
 }

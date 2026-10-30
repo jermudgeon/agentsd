@@ -238,3 +238,36 @@ describe("start-up race", () => {
     expect((deps.saveAccounts as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0]).toEqual([DEFAULT_DIR, IDEALOFT_DIR]);
   });
 });
+
+describe("saved accounts and logging", () => {
+  it("ignores non-string saved entries", async () => {
+    const { poller } = setup({ loadAccounts: async () => [123 as unknown as string, IDEALOFT_DIR] });
+    await poller.start();
+    poller.stop();
+    expect(poller.accounts().map((a) => a.configDir)).toEqual([DEFAULT_DIR, IDEALOFT_DIR]);
+  });
+
+  it("logs the outcome once per change, never the credential", async () => {
+    const log = vi.fn();
+    const { poller } = setup({ log });
+    await poller.pollOnce();
+    await poller.pollOnce();
+    expect(log.mock.calls.map((c) => c[0])).toEqual(["usage default: ok"]);
+  });
+
+  it("logs a missing credential, an expired one, and an HTTP failure with its retry delay", async () => {
+    const missing = vi.fn();
+    await setup({ log: missing, readCredential: vi.fn(async () => null) }).poller.pollOnce();
+    expect(missing).toHaveBeenCalledWith("usage default: no credential (missing or denied)");
+
+    const expired = vi.fn();
+    const e = setup({ log: expired });
+    e.deps.readCredential = vi.fn(async (s: string) => ({ accessToken: s, expiresAt: e.time() - 1, subscriptionType: null }));
+    await e.poller.pollOnce();
+    expect(expired).toHaveBeenCalledWith("usage default: credential expired");
+
+    const http = vi.fn();
+    await setup({ log: http, fetchUsage: vi.fn(async () => { throw new UsageHttpError(429); }) }).poller.pollOnce();
+    expect(http).toHaveBeenCalledWith("usage default: HTTP 429, retry in 120s");
+  });
+});

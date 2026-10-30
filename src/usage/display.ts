@@ -91,6 +91,15 @@ export function pickAccount(
   accounts: AccountView[],
   configDir: string | undefined,
   unboundIndex: number,
+  home = "",
 ): AccountView | undefined {
-  return configDir ? accounts.find((a) => a.configDir === configDir) : accounts[unboundIndex];
+  if (!configDir) return accounts[unboundIndex];
+  const dir = normalizeDir(configDir, home);
+  return accounts.find((a) => a.configDir === dir);
+}
+
+function normalizeDir(dir: string, home: string): string {
+  let d = dir.trim();
+  if (home && (d === "~" || d.startsWith("~/"))) d = home + d.slice(1);
+  return d.length > 1 ? d.replace(/\/+$/, "") : d;
 }

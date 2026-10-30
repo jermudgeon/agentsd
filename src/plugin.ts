@@ -44,6 +44,7 @@ const usagePoller = new UsagePoller({
     const saved = await streamDeck.settings.getGlobalSettings();
     await streamDeck.settings.setGlobalSettings({ ...saved, usageAccounts: dirs });
   },
+  log: (message) => streamDeck.logger.info(message),
 });
 sessionManager.on("configDirSeen", (dir: string) => usagePoller.noteConfigDir(dir));
 setUsagePoller(usagePoller);
@@ -68,7 +69,9 @@ streamDeck.logger.setLevel("info");
 // Start hook server
 hookServer.start().then(() => {
   streamDeck.logger.info("Hook server listening on :9200");
-  return usagePoller.start();
+  usagePoller.start().catch((err) => {
+    streamDeck.logger.error(`Usage poller failed to start: ${err}`);
+  });
 }).catch((err) => {
   streamDeck.logger.error(`Failed to start hook server: ${err}`);
 });

@@ -138,6 +138,13 @@ describe("pickAccount", () => {
     expect(pickAccount([a, b], "/nope", 0)).toBeUndefined();
   });
 
+  it("matches a typed dir written with ~ or a trailing slash", () => {
+    const home = "/Users/x";
+    const idealoft = { ...account(), configDir: "/Users/x/.claude-idealoft" };
+    expect(pickAccount([a, idealoft], "~/.claude-idealoft", 0, home)).toBe(idealoft);
+    expect(pickAccount([a, idealoft], "/Users/x/.claude-idealoft/", 0, home)).toBe(idealoft);
+  });
+
   it("gives unbound keys the accounts in order, and nothing past the last", () => {
     expect(pickAccount([a, b], undefined, 0)).toBe(a);
     expect(pickAccount([a, b], "", 1)).toBe(b);

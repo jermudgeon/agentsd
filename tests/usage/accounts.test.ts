@@ -14,6 +14,10 @@ describe("configDirFromTranscript", () => {
       .toBe("/Users/x/projects/claude-cfg");
   });
 
+  it("returns null for a non-string path instead of throwing", () => {
+    expect(configDirFromTranscript(123 as unknown as string)).toBeNull();
+  });
+
   it.each([undefined, "", "projects/x.jsonl", "/tmp/no-marker.jsonl", "relative/.claude/projects/x.jsonl"])(
     "returns null for %j",
     (p) => {

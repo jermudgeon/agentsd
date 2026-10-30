@@ -39,12 +39,15 @@ export interface PollerDeps {
   fetchUsage(token: string): Promise<UsageReading>;
   loadAccounts(): Promise<string[]>;
   saveAccounts(dirs: string[]): Promise<void>;
+  /** Optional diagnostics; receives one line per outcome change, never a credential. */
+  log?(message: string): void;
 }
 
 interface Entry {
   view: AccountView;
   failures: number;
   retryAt: number;
+  lastOutcome: string | null;
 }
 
 /** Emits "updated" whenever an account's view or the account list changes. */
@@ -71,7 +74,7 @@ export class UsagePoller extends EventEmitter {
   async start(): Promise<void> {
     let saved: string[] = [];
     try {
-      saved = await this.deps.loadAccounts();
+      saved = (await this.deps.loadAccounts()).filter((d): d is string => typeof d === "string");
     } catch {
       // No saved accounts; discovery starts over from session events.
     }
@@ -112,6 +115,7 @@ export class UsagePoller extends EventEmitter {
       view: { configDir: dir, label: accountLabel(dir, this.deps.home), reading: null, readAt: null, samples: [] },
       failures: 0,
       retryAt: 0,
+      lastOutcome: null,
     });
     return true;
   }
@@ -128,10 +132,13 @@ export class UsagePoller extends EventEmitter {
         READ_TIMEOUT_MS,
       );
     } catch {
-      return this.fail(entry, now);
+      return this.noCredential(entry, now);
     }
-    if (!cred) return this.fail(entry, now);
-    if (cred.expiresAt <= now) return false;
+    if (!cred) return this.noCredential(entry, now);
+    if (cred.expiresAt <= now) {
+      this.note(entry, "credential expired");
+      return false;
+    }
 
     try {
       const reading = await withTimeout(this.deps.fetchUsage(cred.accessToken), FETCH_TIMEOUT_MS);
@@ -143,11 +150,29 @@ export class UsagePoller extends EventEmitter {
         ...entry.view.samples.filter((s) => s.t >= now - HISTORY_MS),
         { t: now, fiveHour: reading.fiveHour?.utilization ?? null, sevenDay: reading.sevenDay?.utilization ?? null },
       ];
+      this.note(entry, "ok");
       return true;
     } catch (err) {
-      if (err instanceof UsageHttpError && (err.status === 429 || err.status === 401)) return this.fail(entry, now);
+      if (err instanceof UsageHttpError && (err.status === 429 || err.status === 401)) {
+        this.fail(entry, now);
+        this.note(entry, `HTTP ${err.status}, retry in ${(entry.retryAt - now) / 1000}s`);
+        return false;
+      }
+      this.note(entry, "request failed");
       return false;
     }
+  }
+
+  private noCredential(entry: Entry, now: number): boolean {
+    this.fail(entry, now);
+    this.note(entry, "no credential (missing or denied)");
+    return false;
+  }
+
+  private note(entry: Entry, outcome: string): void {
+    if (outcome === entry.lastOutcome) return;
+    entry.lastOutcome = outcome;
+    this.deps.log?.(`usage ${entry.view.label}: ${outcome}`);
   }
 
   private fail(entry: Entry, now: number): boolean {
