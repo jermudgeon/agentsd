@@ -11,6 +11,14 @@ const STALE_MS = 60 * 1000;
 const STALE_PRUNE_STATES = new Set([State.IDLE, State.DISCONNECTED]);
 const PRUNE_INTERVAL_MS = 60 * 1000;
 
+function isSameCall(pending: PendingPermission, payload: HookPayload): boolean {
+  return (
+    pending.toolName !== undefined &&
+    pending.toolName === payload.tool_name &&
+    JSON.stringify(pending.toolInput) === JSON.stringify(payload.tool_input)
+  );
+}
+
 /** Events that show a terminal permission prompt was answered. */
 const TERMINAL_ANSWERED = new Set<HookEventName>(["PostToolUse", "PostToolUseFailure", "UserPromptSubmit", "StopFailure"]);
 
@@ -136,6 +144,16 @@ export class SessionManager extends EventEmitter {
 
     session.lastActivity = Date.now();
     if (payload.model) session.model = payload.model;
+
+    // The tool call we are holding a request for has finished, so it was answered elsewhere
+    // (the terminal prompt or Claude Code's own checker): drop the request instead of showing it.
+    if (
+      session.pendingPermission &&
+      (event === "PostToolUse" || event === "PostToolUseFailure") &&
+      isSameCall(session.pendingPermission, payload)
+    ) {
+      this.dropHeldPermission(session);
+    }
 
     // Apply state transition
     const prevState = session.state;
@@ -300,6 +318,26 @@ export class SessionManager extends EventEmitter {
   get waitingSession(): SessionState | undefined {
     const head = this.attentionQueue[0];
     return head?.pendingPermission ? head : undefined;
+  }
+
+  /** Release a held request without a decision; the call was already answered elsewhere. */
+  private dropHeldPermission(session: SessionState): void {
+    const pending = session.pendingPermission;
+    if (!pending) return;
+    streamDeck.logger.info(`Dropping held request for session=${session.id}: its ${pending.toolName} call finished elsewhere`);
+    clearTimeout(pending.timer);
+    try {
+      if (!pending.res.writableEnded) {
+        pending.res.writeHead(200, { "Content-Type": "application/json" });
+        pending.res.end("{}");
+      }
+    } catch {
+      // The hook connection is already gone.
+    }
+    session.pendingPermission = null;
+    session.state = State.PROCESSING;
+    this.removeFromPermissionQueue(session.id);
+    this.syncWaiting(session);
   }
 
   private syncWaiting(session: SessionState): void {

@@ -150,6 +150,7 @@ export class HookServer {
         req,
         res,
         toolName: payload.tool_name,
+        toolInput: payload.tool_input,
         timer,
       });
       this.resolveCallerPid(req, payload.session_id);

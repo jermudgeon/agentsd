@@ -6,7 +6,7 @@ import { State, type HookEventName, type PendingPermission } from "../src/types"
 const SESSION_A = "sess-aaaa-1111";
 const SESSION_B = "sess-bbbb-2222";
 
-function makePendingPermission(toolName = "Bash"): PendingPermission {
+function makePendingPermission(toolName = "Bash", toolInput?: unknown): PendingPermission {
   const res = {
     writableEnded: false,
     writeHead: vi.fn(),
@@ -19,6 +19,7 @@ function makePendingPermission(toolName = "Bash"): PendingPermission {
     req,
     res,
     toolName,
+    toolInput,
     timer: setTimeout(() => {}, 0),
   };
 }
@@ -221,6 +222,43 @@ describe("SessionManager permission queue", () => {
       m.setPendingPermission(SESSION_B, makePendingPermission());
       expect(m.resolveOldest(true)).toBe(SESSION_A);
       expect(m.waitingSession?.id).toBe(SESSION_B);
+    });
+  });
+
+  describe("a held request whose own tool call finishes elsewhere", () => {
+    const input = { command: "touch f" };
+    function held() {
+      m = new SessionManager();
+      m.handleEvent("SessionStart", { session_id: SESSION_A });
+      m.handleEvent("PermissionRequest", { session_id: SESSION_A, tool_name: "Bash", tool_input: input });
+      const pend = makePendingPermission("Bash", input);
+      m.setPendingPermission(SESSION_A, pend);
+      return pend;
+    }
+
+    it.each(["PostToolUse", "PostToolUseFailure"] as HookEventName[])(
+      "%s for the same call drops the request and returns the session to PROCESSING",
+      (event) => {
+        const pend = held();
+        m.handleEvent(event, { session_id: SESSION_A, tool_name: "Bash", tool_input: input });
+        expect(m.activeSession?.state).toBe(State.PROCESSING);
+        expect(m.activeSession?.pendingPermission).toBeNull();
+        expect(m.attentionQueue).toEqual([]);
+        expect(pend.res.end).toHaveBeenCalledWith("{}");
+      },
+    );
+
+    it("a PostToolUse for a different call leaves the request held", () => {
+      held();
+      m.handleEvent("PostToolUse", { session_id: SESSION_A, tool_name: "Bash", tool_input: { command: "other" } });
+      expect(m.activeSession?.state).toBe(State.AWAITING_PERMISSION);
+      expect(m.activeSession?.pendingPermission).not.toBeNull();
+    });
+
+    it("a PostToolUse for a different tool leaves the request held", () => {
+      held();
+      m.handleEvent("PostToolUse", { session_id: SESSION_A, tool_name: "Read", tool_input: input });
+      expect(m.activeSession?.pendingPermission).not.toBeNull();
     });
   });
 
