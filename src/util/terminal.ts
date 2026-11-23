@@ -39,3 +39,43 @@ export async function focusSessionTerminal(pid: number, deps: TerminalDeps = def
     return false;
   }
 }
+
+// Claude Code prefixes the terminal title with a status glyph and a space, such as "✳ " or "◐ ".
+const TITLE_GLYPH = /^[^\p{L}\p{N}\s]+\s+/u;
+
+/** Parse "<pid>|<title>" lines into pid -> title, dropping the status glyph. */
+export function parseTerminalTitles(out: string): Map<number, string> {
+  const titles = new Map<number, string>();
+  for (const line of out.split("\n")) {
+    const bar = line.indexOf("|");
+    if (bar < 0) continue;
+    const pid = Number(line.slice(0, bar));
+    if (!Number.isInteger(pid) || pid <= 0) continue;
+    const title = line.slice(bar + 1).replace(TITLE_GLYPH, "").trim();
+    if (title) titles.set(pid, title);
+  }
+  return titles;
+}
+
+// Checks that Ghostty is running first, so asking for titles never launches it.
+const TITLES_SCRIPT = `
+  if application "Ghostty" is running then
+    tell application "Ghostty"
+      set out to ""
+      repeat with t in terminals
+        set out to out & (pid of t) & "|" & (name of t) & linefeed
+      end repeat
+      return out
+    end tell
+  end if
+  return ""
+`;
+
+/** Titles of all Ghostty terminals by the pid of their foreground process. Empty on any failure. */
+export async function terminalTitles(deps: TerminalDeps = defaultDeps): Promise<Map<number, string>> {
+  try {
+    return parseTerminalTitles(await deps.osascript(TITLES_SCRIPT));
+  } catch {
+    return new Map();
+  }
+}
